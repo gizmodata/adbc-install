@@ -15,8 +15,8 @@ name: Test installers
 # check main's branch protection requires.
 #
 # Triggers: every pull request (documentation-only ones too, so the required check always
-# reports), pushes to other branches, workflow_call (deploy.yml, release.yml), by hand, a driver
-# repository's release (repository_dispatch `driver-released`), and weekly as a canary. The weekly
+# reports), workflow_call (deploy.yml, release.yml), by hand (a branch without a pull request),
+# a driver repository's release (repository_dispatch `driver-released`), and weekly as a canary. The weekly
 # run checks the live https://install.adbc.gizmodata.com scripts against the real releases.
 # GitHub disables a quiet public repo's schedule after 60 days without activity (then this also
 # stops running for pull requests until re-enabled): `gh workflow list --all` shows it as
@@ -24,9 +24,6 @@ name: Test installers
 
 on:
   pull_request:
-  push:
-    branches-ignore: [main]
-    paths-ignore: ['**/*.md', 'docs/**']
   repository_dispatch:
     types: [driver-released]
   schedule:

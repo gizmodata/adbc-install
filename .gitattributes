@@ -1,0 +1,3 @@
+# The scripts are served byte for byte and run by sh: LF everywhere, also in Windows checkouts.
+* text=auto eol=lf
+*.png binary

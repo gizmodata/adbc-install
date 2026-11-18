@@ -36,7 +36,7 @@ for d in $drivers; do
   # Exactly one line may differ, and it must be the preset.
   for pair in "install.sh:$d" "install.ps1:$d.ps1"; do
     src="${pair%%:*}"; dst="${pair#*:}"
-    changed="$(diff "$ROOT/$src" "$OUT/$dst" | grep -c '^>' || true)"
+    changed="$(awk 'NR == FNR { a[FNR] = $0; n = FNR; next } { m = FNR; if (a[FNR] != $0) d++ } END { if (m != n) d += 1000; print d + 0 }' "$ROOT/$src" "$OUT/$dst")"
     [ "$changed" = 1 ] || { echo "build-site: $dst differs from $src in $changed lines, not 1" >&2; exit 1; }
     grep -q -e "^ADBC_INSTALL_PRESET=\"$d\"\$" -e "^\$AdbcInstallPreset = '$d'\$" "$OUT/$dst" \
       || { echo "build-site: $dst has no preset for $d" >&2; exit 1; }
