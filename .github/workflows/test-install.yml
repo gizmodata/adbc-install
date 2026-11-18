@@ -1,0 +1,255 @@
+name: Test installers
+
+# Two kinds of tests:
+#
+# - Fixture tests (lint, platform unit tests, fixture-scenarios.sh, windows-tests.ps1, the musl
+#   message). They need no credentials and no real release: fixture releases are served by a
+#   local stand-in for github.com (fake_github.py).
+# - Real-release checks (real-release.sh, windows-real-release.ps1): every driver's real latest
+#   release, installed by its own script and loaded by name through the ADBC driver manager. A
+#   driver whose latest release has no checksums yet (gizmosql, chargewire and hardcharger, until
+#   their releases with SHA256SUMS ship) must be refused; the check flips to a real install by
+#   itself once such a release exists (see real-release.sh).
+#
+# Both gate the deploy (deploy.yml) and the GitHub Release (release.yml). "CI result" is the one
+# check main's branch protection requires.
+#
+# Triggers: every pull request (documentation-only ones too, so the required check always
+# reports), pushes to other branches, workflow_call (deploy.yml, release.yml), by hand, a driver
+# repository's release (repository_dispatch `driver-released`), and weekly as a canary. The weekly
+# run checks the live https://install.adbc.gizmodata.com scripts against the real releases.
+# GitHub disables a quiet public repo's schedule after 60 days without activity (then this also
+# stops running for pull requests until re-enabled): `gh workflow list --all` shows it as
+# disabled_inactivity, and `gh workflow enable test-install.yml` turns it back on.
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+    paths-ignore: ['**/*.md', 'docs/**']
+  repository_dispatch:
+    types: [driver-released]
+  schedule:
+    - cron: '37 7 * * 1'
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+# Superseded runs on a branch are cancelled, never a run on a tag. The prefix keeps this group
+# apart from a caller's (deploy.yml, release.yml): a called workflow's github.workflow is the
+# caller's name, and sharing the caller's group would deadlock the run.
+concurrency:
+  group: test-install-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  # The ADBC driver manager the real-release checks load drivers with.
+  ADBC_DRIVER_MANAGER: adbc-driver-manager==1.13.0
+  # The scheduled canary checks the live site; every other run checks this commit's scripts.
+  LIVE: ${{ github.event_name == 'schedule' && 'https://install.adbc.gizmodata.com' || '' }}
+
+jobs:
+  # ---- fixture tests -------------------------------------------------------------------------------
+  lint:
+    name: Lint and platform unit tests
+    # x64: the PowerShell parse and PSScriptAnalyzer step uses the pwsh preinstalled on this image.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: shellcheck
+        run: shellcheck -s sh install.sh .github/scripts/*.sh
+      - name: Syntax check with dash and bash
+        run: dash -n install.sh && bash -n install.sh
+      - name: Python scripts compile
+        run: python3 -m py_compile .github/scripts/*.py
+      - name: The served files build (one preset line per driver)
+        run: .github/scripts/build-site.sh "$RUNNER_TEMP/site"
+      - name: Platform checks with fake uname/ldd/sysctl (dash, bash)
+        run: |
+          .github/scripts/platform-tests.sh dash
+          .github/scripts/platform-tests.sh bash
+      - name: Parse and analyze the PowerShell scripts
+        shell: pwsh
+        run: |
+          $t = $null; $e = $null
+          foreach ($f in 'install.ps1', '.github/scripts/windows-tests.ps1', '.github/scripts/windows-real-release.ps1') {
+            [System.Management.Automation.Language.Parser]::ParseFile("$PWD/$f", [ref]$t, [ref]$e) | Out-Null
+            if ($e.Count) { $e; exit 1 }
+          }
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser
+          Invoke-ScriptAnalyzer -Path install.ps1 -Severity Error -EnableExit
+
+  fixtures-unix:
+    name: fixtures ${{ matrix.name }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'linux-amd64 (ubuntu-24.04; dash, bash)', runner: ubuntu-24.04, shells: 'dash bash' }
+          - { name: 'linux-arm64 (ubuntu-24.04-arm; dash)', runner: ubuntu-24.04-arm, shells: dash }
+          - { name: 'macos-arm64 (macos-15; sh, dash)', runner: macos-15, shells: 'sh dash' }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Every scenario against fixture releases
+        run: |
+          for s in ${{ matrix.shells }}; do
+            SH="$s" .github/scripts/fixture-scenarios.sh
+          done
+
+  fixtures-old-glibc:
+    name: fixtures oraclelinux-8 (amd64, glibc 2.28; sh)
+    needs: lint
+    runs-on: ubuntu-24.04
+    container: oraclelinux:8
+    steps:
+      - run: dnf install -y -q python3.11 tar gzip findutils diffutils wget && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
+      - uses: actions/checkout@v7
+      # The runner's container user is root, so the --system step is skipped here (it runs on the others).
+      - run: SH=sh .github/scripts/fixture-scenarios.sh
+
+  musl:
+    name: musl message (alpine)
+    needs: lint
+    # x64: GitHub provides a musl Node.js for JavaScript actions (checkout) in Alpine containers on x64 only.
+    runs-on: ubuntu-24.04
+    container: alpine:3.22
+    steps:
+      - uses: actions/checkout@v7
+      - name: Refused with the musl explanation, before any download
+        env:
+          ADBC_INSTALL_GITHUB: http://127.0.0.1:9
+        run: |
+          set +e
+          out="$(sh .github/scripts/build-site.sh /tmp/site >/dev/null && sh /tmp/site/oracle 2>&1)"; code=$?
+          set -e
+          printf '%s\n' "$out"
+          [ "$code" != 0 ] || { echo "::error::installed on musl"; exit 1; }
+          printf '%s\n' "$out" | grep -F "this system uses musl libc (Alpine Linux or similar); GizmoData's ADBC drivers for Linux need glibc" \
+            || { echo "::error::refused, but not with the musl explanation"; exit 1; }
+          if printf '%s\n' "$out" | grep -F "Downloading"; then echo "::error::it downloaded before refusing"; exit 1; fi
+
+  fixtures-windows:
+    name: fixtures ${{ matrix.name }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-amd64 (windows-2025), runner: windows-2025 }
+          - { name: windows-arm64 (windows-11-arm), runner: windows-11-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: Build the served files
+        shell: bash
+        run: .github/scripts/build-site.sh site
+      - name: PowerShell 7
+        shell: pwsh
+        run: ./.github/scripts/windows-tests.ps1 -Site site
+      - name: Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\.github\scripts\windows-tests.ps1 -Site site
+          exit $LASTEXITCODE
+
+  # ---- real releases -------------------------------------------------------------------------------
+  real-release:
+    name: real releases (${{ matrix.name }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: 'linux-amd64, ubuntu-24.04, dash as /bin/sh', runner: ubuntu-24.04 }
+          - { name: 'linux-arm64, ubuntu-24.04-arm, dash as /bin/sh', runner: ubuntu-24.04-arm }
+          - { name: 'macos-arm64, macos-15', runner: macos-15 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: The ADBC driver manager
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q "$ADBC_DRIVER_MANAGER"
+      - name: Every driver's latest release, installed and loaded by name
+        env:
+          PYTHON: ${{ runner.temp }}/venv/bin/python
+        run: .github/scripts/real-release.sh $LIVE
+
+  real-release-old-glibc:
+    name: real releases (linux-amd64, oraclelinux-8, glibc 2.28)
+    needs: lint
+    runs-on: ubuntu-24.04
+    container: oraclelinux:8
+    steps:
+      - run: dnf install -y -q python3.11 tar gzip findutils diffutils
+      - uses: actions/checkout@v7
+      - name: The ADBC driver manager
+        run: python3.11 -m venv /tmp/venv && /tmp/venv/bin/pip install -q "$ADBC_DRIVER_MANAGER"
+      - name: Every driver's latest release, installed and loaded by name
+        env:
+          PYTHON: /tmp/venv/bin/python
+        run: .github/scripts/real-release.sh $LIVE
+
+  real-release-windows:
+    name: real releases (${{ matrix.name }})
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-amd64, runner: windows-2025 }
+          - { name: windows-arm64, runner: windows-11-arm }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: The ADBC driver manager
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/Scripts/python" -m pip install -q "$ADBC_DRIVER_MANAGER"
+      - name: The scripts (this commit's, or the live site's on the weekly run)
+        shell: bash
+        run: |
+          .github/scripts/build-site.sh site
+          if [ -n "$LIVE" ]; then
+            for f in site/*.ps1; do curl -sS --fail --retry 3 -o "$f" "$LIVE/$(basename "$f")"; done
+          fi
+      - name: PowerShell 7
+        shell: pwsh
+        run: ./.github/scripts/windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+      - name: Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          .\.github\scripts\windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+          exit $LASTEXITCODE
+
+  # The one check main's branch protection requires: red if any job failed or was cancelled.
+  result:
+    name: CI result
+    if: always()
+    needs: [lint, fixtures-unix, fixtures-old-glibc, musl, fixtures-windows, real-release, real-release-old-glibc, real-release-windows]
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "results: $RESULTS"
+          case " $RESULTS " in
+            *" failure "* | *" cancelled "* | *" skipped "*) exit 1 ;;
+          esac

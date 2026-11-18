@@ -1,0 +1,189 @@
+name: Deploy
+
+# Every push to main: run the full installer tests, and only if they pass, build the served files
+# (install.sh, install.ps1, and <driver> / <driver>.ps1 for each driver, generated from them by
+# build-site.sh), upload them as text/plain to the S3 bucket behind CloudFront, invalidate the cache,
+# check the live URLs (https and http, no -L) serve exactly these files, and run the one-liners.
+#
+# AWS access is GitHub OIDC to the role in the repo variable AWS_DEPLOY_ROLE_ARN, which trusts only
+# this repo's main branch (the `sub` claim carries the org and repo IDs:
+# repo:gizmodata@181902052/adbc-install@1463434488:ref:refs/heads/main) and may only write the
+# bucket and invalidate the distribution. The role, bucket and distribution are in
+# gizmodata-infrastructure-terraform, aws/dns/adbc_install.tf.
+# No GitHub `environment:` here: it would change the `sub` claim the role trusts.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Queue, never cancel: a deploy cut off between the S3 upload and the invalidation would leave
+# the old scripts cached.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-2
+  BUCKET: gizmodata-adbc-install
+  DISTRIBUTION_ID: E1G81QXOYTFTVR
+  HOST: install.adbc.gizmodata.com
+
+jobs:
+  tests:
+    uses: ./.github/workflows/test-install.yml
+
+  deploy:
+    needs: tests
+    # x64: the AWS CLI is preinstalled on this image.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Deployment record (in progress)
+        id: deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          id=$(gh api "repos/$GITHUB_REPOSITORY/deployments" -X POST -f ref="$GITHUB_SHA" -f environment=production \
+            -F auto_merge=false -f 'required_contexts[]' -f description="the ADBC driver installers to $HOST" --jq .id)
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          gh api "repos/$GITHUB_REPOSITORY/deployments/$id/statuses" -X POST -f state=in_progress >/dev/null
+
+      - name: Build the served files
+        run: .github/scripts/build-site.sh site
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: adbc-install-${{ github.run_id }}
+
+      - name: Upload (install.sh is the root object, /)
+        run: |
+          for f in site/*; do
+            aws s3 cp "$f" "s3://$BUCKET/$(basename "$f")" --content-type 'text/plain; charset=utf-8' \
+              --cache-control 'public, max-age=300' --metadata "git-sha=$GITHUB_SHA" --only-show-errors
+          done
+          aws s3 ls "s3://$BUCKET/"
+
+      - name: Invalidate CloudFront
+        run: |
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' \
+            --query Invalidation.Id --output text
+
+      # Plain curl with no -L, over https and http, as the documented one-liners run it.
+      - name: The live URLs serve these exact files
+        run: |
+          check() {
+            url="$1"; file="$2"
+            code=$(curl -sS -o "$RUNNER_TEMP/body" -D "$RUNNER_TEMP/headers" -w '%{http_code}' "$url") || return 1
+            [ "$code" = 200 ] || { echo "$url: HTTP $code"; return 1; }
+            grep -qi '^content-type: text/plain' "$RUNNER_TEMP/headers" || { echo "$url: not text/plain"; return 1; }
+            cmp -s "$RUNNER_TEMP/body" "$file" || { echo "$url: not this commit's $file yet"; return 1; }
+            echo "$url: 200, text/plain, matches $file"
+          }
+          for _ in $(seq 1 60); do
+            ok=1
+            for scheme in https http; do
+              check "$scheme://$HOST/" site/install.sh || ok=0
+              check "$scheme://$HOST" site/install.sh || ok=0
+              for f in site/*; do
+                check "$scheme://$HOST/$(basename "$f")" "$f" || ok=0
+              done
+            done
+            [ "$ok" = 1 ] && exit 0
+            sleep 10
+          done
+          echo "::error::the live installers didn't match this commit after 10 minutes"
+          exit 1
+
+      - name: The served one-liners run
+        run: |
+          set -u
+          # No driver: the list and usage, exit 1.
+          if out=$(curl -sS "https://$HOST" | sh 2>&1); then echo "$out"; echo "::error::no driver chosen, yet exit 0"; exit 1; fi
+          echo "$out" | grep -F "no driver chosen: pick one of: oracle db2 quack gizmosql chargewire hardcharger"
+          # A real install over plain http, in a throwaway HOME, loaded by name.
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install -q adbc-driver-manager==1.13.0
+          export HOME="$RUNNER_TEMP/home"
+          mkdir -p "$HOME"
+          curl -sS "http://$HOST/oracle" | sh
+          "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py --driver oracle
+          curl -sS "https://$HOST/oracle" | sh -s -- --uninstall
+          "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py --driver oracle --absent
+
+      # One command per line: a failure inside an && list would not stop the step.
+      - name: The served one-liners run (as the README has them)
+        run: |
+          set -u
+          export HOME="$RUNNER_TEMP/home2" && mkdir -p "$HOME"
+          check() { "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py "$@"; }
+          curl "https://$HOST/oracle" | ADBC_VERSION=1.0.6 sh
+          check --driver oracle
+          curl "https://$HOST" | sh -s -- oracle
+          check --driver oracle
+          curl "https://$HOST/oracle" | sh -s -- --name oracle-gizmodata
+          check --driver oracle --name oracle-gizmodata
+          curl "https://$HOST/oracle" | sh -s -- --name oracle-gizmodata --uninstall
+          check --driver oracle --name oracle-gizmodata --absent
+          curl "http://$HOST/db2" | sh
+          check --driver db2
+          curl "https://$HOST/db2" | sh -s -- --uninstall
+          check --driver db2 --absent
+          curl "https://$HOST/oracle" | sh -s -- --uninstall
+          check --driver oracle --absent
+          curl "https://$HOST/oracle" | sudo sh -s -- --system
+          sudo test -f /etc/adbc/drivers/oracle.toml
+          curl "https://$HOST/oracle" | sudo sh -s -- --system --uninstall
+          sudo test ! -e /etc/adbc/drivers/oracle.toml
+
+      - name: Deployment record (result)
+        if: always() && steps.deployment.outputs.id
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/deployments/${{ steps.deployment.outputs.id }}/statuses" -X POST \
+            -f state="$STATE" -f environment_url="https://$HOST" >/dev/null
+
+  # The Windows one-liners from the README, against the live site, under both PowerShells.
+  live-windows:
+    name: live one-liners (windows-2025, ${{ matrix.shell }})
+    needs: deploy
+    strategy:
+      fail-fast: false
+      matrix:
+        shell: [pwsh, powershell]
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - name: The ADBC driver manager
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/Scripts/python" -m pip install -q adbc-driver-manager==1.13.0
+      - name: irm | iex, a pinned version, and -Uninstall through a scriptblock
+        shell: ${{ matrix.shell }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $py = "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+          function Check([string[]]$a) { & $py -I .github\scripts\check_driver_by_name.py @a; if ($LASTEXITCODE) { exit 1 } }
+          irm https://${{ env.HOST }}/oracle.ps1 | iex
+          Check @('--driver', 'oracle')
+          $env:ADBC_VERSION = '1.0.6'; irm https://${{ env.HOST }}/oracle.ps1 | iex
+          Remove-Item Env:\ADBC_VERSION
+          Check @('--driver', 'oracle')
+          & ([scriptblock]::Create((irm https://${{ env.HOST }}/oracle.ps1))) -Uninstall
+          Check @('--driver', 'oracle', '--absent')
