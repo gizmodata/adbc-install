@@ -239,3 +239,5 @@ try {
 
 if ($failures) { Write-Host "$failures Windows test(s) failed ($shell)" -ForegroundColor Red; exit 1 }
 Write-Host "all Windows tests passed ($shell, $platform)" -ForegroundColor Green
+# Explicitly: GitHub's pwsh step exits with $LASTEXITCODE, the last (expected) installer failure's.
+exit 0

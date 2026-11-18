@@ -132,3 +132,5 @@ foreach ($d in $repos.Keys) {
 
 if ($failures) { Write-Host "$failures real-release check(s) failed ($shell)" -ForegroundColor Red; exit 1 }
 Write-Host "all real-release checks passed ($shell, $platform)" -ForegroundColor Green
+# Explicitly: GitHub's pwsh step exits with $LASTEXITCODE, the last (expected) installer failure's.
+exit 0
