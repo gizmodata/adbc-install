@@ -284,7 +284,7 @@ run 0 $GH -- "$SITE/oracle"
 expect "belonged to another driver (url https://example.com/another-oracle-driver); it is kept as $D/oracle.toml.replaced-"
 manifest_ok "$D/oracle.toml" oracle 9.9.9
 set -- "$D"/oracle.toml.replaced-*
-[ $# = 1 ] && [ -f "$1" ] || fail "expected one backup, found: $*"
+if [ $# != 1 ] || [ ! -f "$1" ]; then fail "expected one backup, found: $*"; fi
 same "$1" "$FOREIGN"
 restore="$(sed -n 's/.*note: to go back to it: //p' "$OUT")"
 [ -n "$restore" ] || fail "no restore command printed"
@@ -311,7 +311,7 @@ same "$D/oracle.toml" "$FOREIGN"
 manifest_ok "$D/oracle-gizmodata.toml" oracle 9.9.9
 # shellcheck disable=SC2086
 run 0 $GH ADBC_NAME=oracle-gizmodata ADBC_UNINSTALL=1 -- "$SITE/oracle"
-[ ! -e "$D/oracle-gizmodata.toml" ] && [ ! -e "$D/oracle-gizmodata" ] || fail "--name uninstall left files"
+if [ -e "$D/oracle-gizmodata.toml" ] || [ -e "$D/oracle-gizmodata" ]; then fail "--name uninstall left files"; fi
 same "$D/oracle.toml" "$FOREIGN"
 run nonzero -- "$SITE/oracle" --name ../x
 expect "--name must be letters, digits"
@@ -327,7 +327,7 @@ step "13. Uninstall removes our manifest and libraries, then has nothing to do"
 run 0 -- "$SITE/db2" --uninstall
 expect "Removed $D/db2.toml"
 expect "Removed $D/db2"
-[ ! -e "$D/db2.toml" ] && [ ! -e "$D/db2" ] || fail "db2 is still there"
+if [ -e "$D/db2.toml" ] || [ -e "$D/db2" ]; then fail "db2 is still there"; fi
 run 0 -- "$SITE/db2" --uninstall
 expect "Nothing to remove: no Db2 driver named 'db2'"
 for d in quack gizmosql chargewire hardcharger; do run 0 -- "$SITE/$d" --uninstall; done

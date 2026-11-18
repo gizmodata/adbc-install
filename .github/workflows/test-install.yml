@@ -112,7 +112,7 @@ jobs:
       - run: dnf install -y -q python3.11 tar gzip findutils diffutils wget && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
       - uses: actions/checkout@v7
       # The runner's container user is root, so the --system step is skipped here (it runs on the others).
-      - run: SH=sh .github/scripts/fixture-scenarios.sh
+      - run: SH='sh' .github/scripts/fixture-scenarios.sh
 
   musl:
     name: musl message (alpine)
@@ -186,7 +186,7 @@ jobs:
       - name: Every driver's latest release, installed and loaded by name
         env:
           PYTHON: ${{ runner.temp }}/venv/bin/python
-        run: .github/scripts/real-release.sh $LIVE
+        run: .github/scripts/real-release.sh ${LIVE:+"$LIVE"}
 
   real-release-old-glibc:
     name: real releases (linux-amd64, oraclelinux-8, glibc 2.28)
@@ -201,7 +201,7 @@ jobs:
       - name: Every driver's latest release, installed and loaded by name
         env:
           PYTHON: /tmp/venv/bin/python
-        run: .github/scripts/real-release.sh $LIVE
+        run: .github/scripts/real-release.sh ${LIVE:+"$LIVE"}
 
   real-release-windows:
     name: real releases (${{ matrix.name }})
