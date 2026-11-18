@@ -425,7 +425,8 @@ function Invoke-Main {
       Move-Item -LiteralPath $manifest -Destination $replaced
     }
     # Into place in one step, so a driver manager never reads half a manifest.
-    if (Test-Path -LiteralPath $manifest) { [IO.File]::Replace($staged, $manifest, $null) } else { [IO.File]::Move($staged, $manifest) }
+    # (A $null argument would reach .NET as "", which Replace refuses: [NullString]::Value is a real null.)
+    if (Test-Path -LiteralPath $manifest) { [IO.File]::Replace($staged, $manifest, [NullString]::Value) } else { [IO.File]::Move($staged, $manifest) }
 
     # Earlier versions this installer put here are no longer in use (a running program may still
     # hold one open: it stays until the next install).
