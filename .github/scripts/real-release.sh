@@ -92,6 +92,9 @@ for d in oracle db2 quack gizmosql chargewire hardcharger; do
   latest="$(curl -sSIL --retry 4 --retry-delay 3 -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")"
   case "$latest" in */releases/tag/v*) tag="${latest##*/}" ;; *) bad "no latest release ($latest)"; continue ;; esac
   ver="${tag#v}"
+  # Every run of the installer below asks for the release probed here (a release published while
+  # this runs would otherwise be installed instead); oracle's first install looks up the latest.
+  PIN="ADBC_VERSION=$ver"
   case "$d" in oracle|db2|quack) asset="libadbc_driver_$d-$OSNAME-$ARCH.tar.gz" ;; *) asset="libadbc_driver_$d-$tag-$PLATFORM.tar.gz" ;; esac
   base="https://github.com/$repo/releases/download/$tag"
   case " $(builds_of "$d") " in *" $PLATFORM "*) listed=1 ;; *) listed="" ;; esac
@@ -99,7 +102,7 @@ for d in oracle db2 quack gizmosql chargewire hardcharger; do
   if ! exists "$base/$asset"; then
     [ -z "$listed" ] || { bad "$tag has no $asset, and $d has had $PLATFORM builds"; continue; }
     echo "$d $tag has no $PLATFORM build: the installer must say so"
-    if installer -- ; then bad "the installer succeeded without a $PLATFORM build"; continue; fi
+    if installer "$PIN" -- ; then bad "the installer succeeded without a $PLATFORM build"; continue; fi
     has "$ver has no build for $PLATFORM" || bad "refused, but not with 'has no build for $PLATFORM'"
     continue
   fi
@@ -112,7 +115,7 @@ for d in oracle db2 quack gizmosql chargewire hardcharger; do
     esac
     # Expected until the driver's first release with SHA256SUMS (see the comment at the top).
     echo "$d $tag has no checksums yet: the installer must refuse it"
-    if installer -- ; then bad "the installer installed $tag without checksums"; continue; fi
+    if installer "$PIN" -- ; then bad "the installer installed $tag without checksums"; continue; fi
     has "publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify" \
       || bad "refused, but not for the missing checksums"
     [ ! -e "$D/$d.toml" ] || bad "a manifest was written anyway"
@@ -122,7 +125,9 @@ for d in oracle db2 quack gizmosql chargewire hardcharger; do
 
   echo "$d $tag: install, load by name, uninstall"
   by_name --absent || bad "'$d' was found before installing"
-  if ! installer -- ; then bad "the installer failed"; continue; fi
+  if [ "$d" = oracle ]; then first=""; else first="$PIN"; fi
+  # shellcheck disable=SC2086 # empty for oracle
+  if ! installer $first -- ; then bad "the installer failed"; continue; fi
   has "Checksum OK (" || bad "no checksum line"
   has "  library:  $D/$d/$ver/libadbc_driver_$d." || bad "no library line"
   has "  manifest: $D/$d.toml" || bad "no manifest line"

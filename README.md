@@ -55,9 +55,10 @@ conn = adbc_driver_manager.dbapi.connect(driver="oracle", uri="oracle://scott:ti
 | [`hardcharger`](https://github.com/gizmodata/hardcharger-adbc) | `/hardcharger`, `/hardcharger.ps1` | Hardcharger | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
 
 Each driver's README describes its URI and options. The installer verifies every download
-against the release's checksums, so it installs only releases that publish them. The latest
-releases of `gizmosql` (2.0.18), `chargewire` (2.4.0) and `hardcharger` (2.6.0) publish none yet
-and are refused with a message that says so; their next releases add `SHA256SUMS`.
+against the release's checksums, so it installs only releases that publish them: `oracle`,
+`db2` and `quack` from the releases above on, `gizmosql` from 2.0.19 and `chargewire` from 2.4.1.
+`hardcharger` 2.6.0, its latest release today, publishes none and is refused with a message that
+says so; its next release adds `SHA256SUMS`.
 
 The Linux builds need glibc, not musl (so not Alpine); the tests run them on Oracle Linux 8 (glibc 2.28) and newer.
 

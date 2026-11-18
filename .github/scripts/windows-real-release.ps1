@@ -68,6 +68,9 @@ foreach ($d in $repos.Keys) {
   $latest = Get-Latest $repo
   if ($latest -notmatch '/releases/tag/(v[^/]+)$') { Bad "no latest release ($latest)"; continue }
   $tag = $Matches[1]; $ver = $tag.Substring(1)
+  # Every run of the installer below asks for the release probed here (a release published while
+  # this runs would otherwise be installed instead); oracle's first install looks up the latest.
+  $pin = @{ ADBC_VERSION = $ver }
   $asset = if ($d -in @('oracle', 'db2', 'quack')) { "libadbc_driver_$d-windows-$arch.tar.gz" } else { "libadbc_driver_$d-$tag-$platform.tar.gz" }
   $base = "https://github.com/$repo/releases/download/$tag"
   $listed = $builds[$d] -contains $platform
@@ -75,7 +78,7 @@ foreach ($d in $repos.Keys) {
   if (-not (Test-Exists "$base/$asset")) {
     if ($listed) { Bad "$tag has no $asset, and $d has had $platform builds"; continue }
     Write-Host "$d $tag has no $platform build: the installer must say so"
-    if (Invoke-Installer $d) { Bad "the installer succeeded without a $platform build"; continue }
+    if (Invoke-Installer $d -envs $pin) { Bad "the installer succeeded without a $platform build"; continue }
     if (-not $last.Contains("$ver has no build for $platform")) { Bad "refused, but not with 'has no build for $platform'" }
     continue
   }
@@ -85,7 +88,7 @@ foreach ($d in $repos.Keys) {
     if ($d -notin @('gizmosql', 'chargewire', 'hardcharger')) { Bad "$tag publishes no checksums; $d's releases have had them"; continue }
     # Expected until the driver's first release with SHA256SUMS (see real-release.sh's header).
     Write-Host "$d $tag has no checksums yet: the installer must refuse it"
-    if (Invoke-Installer $d) { Bad "the installer installed $tag without checksums"; continue }
+    if (Invoke-Installer $d -envs $pin) { Bad "the installer installed $tag without checksums"; continue }
     if (-not $last.Contains("publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify")) { Bad 'refused, but not for the missing checksums' }
     if (Test-Path -LiteralPath "$drv\$d.toml") { Bad 'a manifest was written anyway' }
     if (-not (Test-ByName @('--absent'))) { Bad "'$d' loads although nothing was installed" }
@@ -94,7 +97,8 @@ foreach ($d in $repos.Keys) {
 
   Write-Host "$d ${tag}: install, load by name, uninstall"
   if (-not (Test-ByName @('--absent'))) { Bad "'$d' was found before installing" }
-  if (-not (Invoke-Installer $d)) { Bad 'the installer failed'; continue }
+  $first = if ($d -eq 'oracle') { @{} } else { $pin }
+  if (-not (Invoke-Installer $d -envs $first)) { Bad 'the installer failed'; continue }
   foreach ($want in @('Checksum OK (', "library:  $drv\$d\$ver\libadbc_driver_$d.dll", "manifest: $drv\$d.toml", "driver = `"$d`"")) {
     if (-not $last.Contains($want)) { Bad "no '$want' in the output" }
   }
