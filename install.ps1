@@ -171,6 +171,23 @@ function Get-RedirectTarget([string]$url) {
   }
 }
 
+# The release's archive name for a platform (linux_amd64, macos_arm64, windows_arm64, ...).
+function Get-AssetName($info, [string]$ver, [string]$plat) {
+  if ($info.Naming -eq 'by_os') {
+    $o = ($plat -split '_')[0]; if ($o -eq 'macos') { $o = 'darwin' }
+    return "$($info.Lib)-$o-$(($plat -split '_')[1]).tar.gz"
+  }
+  return "$($info.Lib)-v$ver-$plat.tar.gz"
+}
+
+# Whether a release file exists (a 200 at the end of its redirects), without downloading it.
+function Test-UrlExists([string]$url) {
+  try {
+    $req = [Net.HttpWebRequest]::Create($url); $req.Method = 'HEAD'; $req.AllowAutoRedirect = $true
+    $resp = $req.GetResponse(); $ok = ([int]$resp.StatusCode -eq 200); $resp.Close(); return $ok
+  } catch { return $false }
+}
+
 # The checksum for $asset in a sha256sum-style file ("<sha256>  [*][./]<name>"; with $one, a bare
 # "<sha256>" line counts too, as in <asset>.sha256).
 function Get-SumsEntry([string]$file, [string]$asset, [bool]$one) {
@@ -307,7 +324,7 @@ function Invoke-Main {
         if (-not $ver) { Fail "the latest $($info.Title) release is tagged '$tagName', which is not a version this installer knows; set `$env:ADBC_VERSION" }
       }
       $tag = "v$ver"
-      $asset = if ($info.Naming -eq 'by_os') { "$($info.Lib)-windows-$arch.tar.gz" } else { "$($info.Lib)-v$ver-$platform.tar.gz" }
+      $asset = Get-AssetName $info $ver $platform
       $base = if ($baseArg) { $baseArg.TrimEnd('/') } else { "$Gh/$($info.Repo)/releases/download/$tag" }
 
       Info "Downloading the $($info.Title) ADBC driver $ver for $platform"
@@ -317,7 +334,11 @@ function Invoke-Main {
         if ($code -eq 404 -and -not $baseArg) {
           $rel = Get-Url "$Gh/$($info.Repo)/releases/tag/$tag" (Join-Path $tmp 'release.html')
           if ($rel -eq 404) { Fail "$($info.Repo) has no release $tag (releases: $Gh/$($info.Repo)/releases)" }
-          Fail "$($info.Title) $ver has no build for $platform ($asset is not in $Gh/$($info.Repo)/releases/tag/$tag)"
+          $found = @(foreach ($p in 'linux_amd64', 'linux_arm64', 'macos_amd64', 'macos_arm64', 'windows_amd64', 'windows_arm64') {
+            if (Test-UrlExists "$base/$(Get-AssetName $info $ver $p)") { $p }
+          })
+          $list = if ($found.Count) { $found -join ' ' } else { '(none found)' }
+          Fail "$($info.Title) $ver has no build for $platform; its builds are for: $list ($Gh/$($info.Repo)/releases/tag/$tag)"
         }
         Fail "could not download $base/$asset (HTTP $code) $script:LastError"
       }
@@ -366,8 +387,10 @@ function Invoke-Main {
     New-Item -ItemType Directory -Path $extract | Out-Null
     $tarOut = & $tar -xzf $archivePath -C $extract 2>&1
     if ($LASTEXITCODE -ne 0) { Fail "could not unpack $([IO.Path]::GetFileName($archivePath)): $tarOut" }
-    $dlls = @(Get-ChildItem -LiteralPath $extract -Recurse -File -Filter "$($info.Lib).dll")
-    if ($dlls.Count -eq 0) { Fail "$([IO.Path]::GetFileName($archivePath)) holds no $($info.Lib).dll: is it the $($info.Title) archive for $platform?" }
+    # The library is at the archive's root (oracle, db2) or in its one top folder (the others).
+    $dlls = @(Get-ChildItem -LiteralPath $extract -File -Filter "$($info.Lib).dll") +
+      @(Get-ChildItem -LiteralPath $extract -Directory | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter "$($info.Lib).dll" })
+    if ($dlls.Count -eq 0) { Fail "$([IO.Path]::GetFileName($archivePath)) holds no $($info.Lib).dll at its root or one folder down: is it the $($info.Title) archive for $platform?" }
     if ($dlls.Count -gt 1) { Fail "$([IO.Path]::GetFileName($archivePath)) holds more than one $($info.Lib).dll" }
     $built = Get-DllPlatform $dlls[0].FullName
     if ($built -ne $platform) { Fail "$([IO.Path]::GetFileName($archivePath)) holds a $built library, and this machine is ${platform}: is it the right archive?" }

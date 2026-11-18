@@ -133,6 +133,11 @@ release oracle 9.9.4 noline
 release oracle 9.9.3 both "$OTHER"
 mkdir -p "$F/adbc-driver-oracle/v9.9.2" && echo other > "$F/adbc-driver-oracle/v9.9.2/libadbc_driver_oracle-windows-amd64.tar.gz"
 release chargewire 9.9.5 none
+# A library two folders down is not looked for (only the root and one folder down are).
+release oracle 9.9.1
+b="$ROOT/build/deep"; mkdir -p "$b/a/b"; fake_lib "$ARCH" "$b/a/b/libadbc_driver_oracle.$EXT"
+(cd "$b" && tar -czf "$F/adbc-driver-oracle/v9.9.1/$(asset_of oracle 9.9.1)" a)
+printf '%s  %s\n' "$(sum "$F/adbc-driver-oracle/v9.9.1/$(asset_of oracle 9.9.1)")" "$(asset_of oracle 9.9.1)" > "$F/adbc-driver-oracle/v9.9.1/SHA256SUMS"
 release chargewire 9.9.7 mismatch
 release gizmosql 9.9.6 sums
 
@@ -251,10 +256,16 @@ run nonzero $GH ADBC_VERSION=9.9.3 -- "$SITE/oracle"
 expect "holds a ${OS}_$OTHER library, and this machine is $PLATFORM"
 unchanged
 
+step "8a. A library deeper than one folder is not found"
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.9.1 -- "$SITE/oracle"
+expect "holds no libadbc_driver_oracle.$EXT at its root or one folder down"
+unchanged
+
 step "9. A release with no build for this platform, and a version never released"
 # shellcheck disable=SC2086
 run nonzero $GH ADBC_VERSION=9.9.2 -- "$SITE/oracle"
-expect "Oracle 9.9.2 has no build for $PLATFORM ($(asset_of oracle 9.9.2) is not in $URL/gizmodata/adbc-driver-oracle/releases/tag/v9.9.2)"
+expect "Oracle 9.9.2 has no build for $PLATFORM; its builds are for: windows_amd64 ($URL/gizmodata/adbc-driver-oracle/releases/tag/v9.9.2)"
 # shellcheck disable=SC2086
 run nonzero $GH ADBC_VERSION=1.2.3 -- "$SITE/oracle"
 expect "gizmodata/adbc-driver-oracle has no release v1.2.3 (releases: $URL/gizmodata/adbc-driver-oracle/releases)"

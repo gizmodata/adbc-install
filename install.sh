@@ -327,12 +327,23 @@ normalize_version() {
   printf '%s\n' "$v"
 }
 
-asset_name() {  # asset_name VERSION
+asset_name() {  # asset_name VERSION [PLATFORM]
+  p="${2:-$PLATFORM}"
   if [ "$NAMING" = by_os ]; then
-    case "$OS" in macos) o=darwin ;; *) o="$OS" ;; esac
-    echo "$LIB-$o-$ARCH.tar.gz"
+    o="${p%%_*}"; [ "$o" = macos ] && o=darwin
+    echo "$LIB-$o-${p#*_}.tar.gz"
   else
-    echo "$LIB-v$1-$PLATFORM.tar.gz"
+    echo "$LIB-v$1-$p.tar.gz"
+  fi
+}
+
+# Whether a release file exists (HTTP 200 at the end of its redirects), without downloading it.
+exists() {
+  if [ "$DL" = curl ]; then
+    c="$(curl -sSIL --retry 2 --connect-timeout 20 --proto "$PROTO" --proto-redir "$PROTO" -o /dev/null -w '%{http_code}' "$1" 2>/dev/null || true)"
+    [ "$c" = 200 ]
+  else
+    wget -q --spider -t 2 -T 30 "$1" 2>/dev/null
   fi
 }
 
@@ -368,7 +379,11 @@ if [ -z "$ARCHIVE" ]; then
       if [ "$rel" = 404 ]; then
         fatal "$REPO has no release $TAG (releases: $GH/$REPO/releases)"
       fi
-      fatal "$TITLE $VERSION has no build for $PLATFORM ($ASSET is not in $GH/$REPO/releases/tag/$TAG)"
+      builds=""
+      for p in linux_amd64 linux_arm64 macos_amd64 macos_arm64 windows_amd64 windows_arm64; do
+        if exists "$BASE/$(asset_name "$VERSION" "$p")"; then builds="$builds $p"; fi
+      done
+      fatal "$TITLE $VERSION has no build for $PLATFORM; its builds are for:${builds:- (none found)} ($GH/$REPO/releases/tag/$TAG)"
     fi
     fatal "could not download $BASE/$ASSET (HTTP $code) $(fetch_err)"
   fi
@@ -414,9 +429,14 @@ fi
 # ---- unpack and check the library ---------------------------------------------------------------
 mkdir "$TMP/x"
 tar -xzf "$ARCHIVE" -C "$TMP/x" 2>"$TMP/tar.err" || fatal "could not unpack $(basename "$ARCHIVE"): $(head -n 1 "$TMP/tar.err")"
-found="$(find "$TMP/x" -type f -name "$LIB.$EXT")"
-[ -n "$found" ] || fatal "$(basename "$ARCHIVE") holds no $LIB.$EXT: is it the $TITLE archive for $PLATFORM?"
-case "$found" in *"$NL"*) fatal "$(basename "$ARCHIVE") holds more than one $LIB.$EXT" ;; esac
+# The library is at the archive's root (oracle, db2) or in its one top folder (the others).
+found=""
+for f in "$TMP/x/$LIB.$EXT" "$TMP/x"/*/"$LIB.$EXT"; do
+  [ -f "$f" ] || continue
+  [ -z "$found" ] || fatal "$(basename "$ARCHIVE") holds more than one $LIB.$EXT"
+  found="$f"
+done
+[ -n "$found" ] || fatal "$(basename "$ARCHIVE") holds no $LIB.$EXT at its root or one folder down: is it the $TITLE archive for $PLATFORM?"
 built="$(lib_platform "$found")"
 case "$built" in
   "$PLATFORM"|macos_universal) ;;

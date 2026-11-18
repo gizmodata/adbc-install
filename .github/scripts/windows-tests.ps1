@@ -173,7 +173,7 @@ try {
   $r = Invoke-Installer "$Site\oracle.ps1" @('-Version', '9.9.3')
   Check 'a DLL for another machine: refused' ($r.Code -ne 0 -and $r.Out.Contains("holds a windows_$other library, and this machine is $platform") -and (Test-Unchanged))
   $r = Invoke-Installer "$Site\oracle.ps1" @('-Version', '9.9.2')
-  Check 'no build for this platform' ($r.Code -ne 0 -and $r.Out.Contains("Oracle 9.9.2 has no build for $platform"))
+  Check 'no build for this platform, and the builds there are' ($r.Code -ne 0 -and $r.Out.Contains("Oracle 9.9.2 has no build for ${platform}; its builds are for: linux_amd64 ("))
   $r = Invoke-Installer "$Site\oracle.ps1" @('-Version', '1.2.3')
   Check 'a version never released' ($r.Code -ne 0 -and $r.Out.Contains('gizmodata/adbc-driver-oracle has no release v1.2.3'))
   $r = Invoke-Installer "$Site\oracle.ps1" @('-Version', '1.2')
