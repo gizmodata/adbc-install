@@ -23,7 +23,7 @@ Write-Host "shell: $shell $($PSVersionTable.PSVersion); platform: $platform; dri
 & $Python -c 'import adbc_driver_manager, sys; print(sys.version.split()[0], "adbc_driver_manager", adbc_driver_manager.__version__)'
 if ($LASTEXITCODE) { Write-Host "::error::$Python has no adbc_driver_manager"; exit 1 }
 
-$repos = [ordered]@{ oracle = 'adbc-driver-oracle'; db2 = 'adbc-driver-db2'; quack = 'adbc-driver-quack'; gizmosql = 'gizmosql-adbc'; chargewire = 'chargewire-adbc'; hardcharger = 'hardcharger-adbc' }
+$repos = [ordered]@{ hardcharger = 'hardcharger-adbc'; chargewire = 'chargewire-adbc'; gizmosql = 'gizmosql-adbc'; oracle = 'adbc-driver-oracle'; db2 = 'adbc-driver-db2'; quack = 'adbc-driver-quack' }
 # The Windows builds each driver's releases have (as of their latest releases, 2026-11-18).
 $builds = @{ oracle = @('windows_amd64', 'windows_arm64'); db2 = @('windows_amd64'); quack = @('windows_amd64', 'windows_arm64')
   gizmosql = @('windows_amd64', 'windows_arm64'); chargewire = @('windows_amd64', 'windows_arm64'); hardcharger = @('windows_amd64', 'windows_arm64') }

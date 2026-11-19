@@ -23,7 +23,7 @@ $here = $PSScriptRoot
 $root = Join-Path ([IO.Path]::GetTempPath()) "adbc-test-$([Guid]::NewGuid().ToString('N'))"
 New-Item -ItemType Directory -Path $root | Out-Null
 $failures = 0
-$drivers = @('oracle', 'db2', 'quack', 'gizmosql', 'chargewire', 'hardcharger')
+$drivers = @('hardcharger', 'chargewire', 'gizmosql', 'oracle', 'db2', 'quack')
 $repos = @{ oracle = 'adbc-driver-oracle'; db2 = 'adbc-driver-db2'; quack = 'adbc-driver-quack'; gizmosql = 'gizmosql-adbc'; chargewire = 'chargewire-adbc'; hardcharger = 'hardcharger-adbc' }
 function Test-ByOs([string]$d) { $d -in @('oracle', 'db2', 'quack') }
 
@@ -127,7 +127,7 @@ try {
 
   # ---- the generic script -------------------------------------------------------------------------
   $r = Invoke-Installer "$Site\install.ps1"
-  Check 'generic: no driver prints the list and fails' ($r.Code -ne 0 -and $r.Out -match 'no driver chosen: pick one of: oracle db2 quack gizmosql chargewire hardcharger' -and $r.Out -match 'gizmodata/hardcharger-adbc')
+  Check 'generic: no driver prints the list and fails' ($r.Code -ne 0 -and $r.Out -match 'no driver chosen: pick one of: hardcharger chargewire gizmosql oracle db2 quack' -and $r.Out -match 'gizmodata/hardcharger-adbc')
   $r = Invoke-Installer "$Site\install.ps1" @('mysql')
   Check 'generic: an unknown driver is refused' ($r.Code -ne 0 -and $r.Out -match "unknown driver 'mysql'")
   $r = Invoke-Installer "$Site\install.ps1" @('db2')

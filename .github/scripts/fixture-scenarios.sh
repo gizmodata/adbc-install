@@ -122,7 +122,7 @@ release() {
     mismatch) printf '%s  %s\n' "0000000000000000000000000000000000000000000000000000000000000000" "$n" > "$dir/SHA256SUMS" ;;
   esac
 }
-for d in oracle db2 quack gizmosql chargewire hardcharger; do
+for d in hardcharger chargewire gizmosql oracle db2 quack; do
   release "$d" 9.9.8
   release "$d" 9.9.9
 done
@@ -155,15 +155,15 @@ GH="ADBC_INSTALL_GITHUB=$URL"
 # ---- the generic script ---------------------------------------------------------------------------
 step "1. The generic script with no driver: the list and usage, exit 1"
 run nonzero -- "$SITE/install.sh"
-expect "no driver chosen: pick one of: oracle db2 quack gizmosql chargewire hardcharger"
-for d in oracle db2 quack gizmosql chargewire hardcharger; do expect "https://github.com/gizmodata/$(repo_of "$d")"; done
+expect "no driver chosen: pick one of: hardcharger chargewire gizmosql oracle db2 quack"
+for d in hardcharger chargewire gizmosql oracle db2 quack; do expect "https://github.com/gizmodata/$(repo_of "$d")"; done
 expect "curl https://install.adbc.gizmodata.com/<driver> | sh"
 
 step "1a. --help exits 0; an unknown driver and an unknown option are refused"
 run 0 -- "$SITE/install.sh" --help
 expect "ADBC_VERSION"
 run nonzero -- "$SITE/install.sh" mysql
-expect "unknown driver 'mysql': pick one of: oracle db2 quack gizmosql chargewire hardcharger"
+expect "unknown driver 'mysql': pick one of: hardcharger chargewire gizmosql oracle db2 quack"
 run nonzero -- "$SITE/oracle" --frobnicate
 expect "unknown option: --frobnicate"
 run nonzero -- "$SITE/oracle" db2
@@ -181,7 +181,7 @@ manifest_ok "$D/quack.toml" quack 9.9.9
 
 # ---- every driver's own script ------------------------------------------------------------------
 step "2. Every driver's script installs its latest release"
-for d in oracle db2 quack gizmosql chargewire hardcharger; do
+for d in hardcharger chargewire gizmosql oracle db2 quack; do
   # shellcheck disable=SC2086
   run 0 $GH -- "$SITE/$d"
   expect "Checksum OK (SHA256SUMS)"
