@@ -3,7 +3,8 @@ name: Deploy
 # Every push to main: run the full installer tests, and only if they pass, build the served files
 # (install.sh, install.ps1, and <driver> / <driver>.ps1 for each driver, generated from them by
 # build-site.sh), upload them as text/plain to the S3 bucket behind CloudFront, invalidate the cache,
-# check the live URLs (https and http, no -L) serve exactly these files, and run the one-liners.
+# check the live URLs (https, no -L) serve exactly these files and plain http serves only the
+# https-only stub, and run the one-liners.
 #
 # AWS access is GitHub OIDC to the role in the repo variable AWS_DEPLOY_ROLE_ARN, which trusts only
 # this repo's main branch (the `sub` claim carries the org and repo IDs:
@@ -79,8 +80,10 @@ jobs:
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths '/*' \
             --query Invalidation.Id --output text
 
-      # Plain curl with no -L, over https and http, as the documented one-liners run it.
-      - name: The live URLs serve these exact files
+      # Plain curl with no -L, as the documented one-liners run it. https serves these exact files;
+      # plain http never serves a script, only CloudFront's stub (gizmodata-infrastructure-terraform
+      # aws/dns/installers_https_only.tf), which prints the https URL and exits non-zero.
+      - name: The live URLs serve these exact files (https) and only the stub (http)
         run: |
           check() {
             url="$1"; file="$2"
@@ -90,14 +93,29 @@ jobs:
             cmp -s "$RUNNER_TEMP/body" "$file" || { echo "$url: not this commit's $file yet"; return 1; }
             echo "$url: 200, text/plain, matches $file"
           }
+          # http: 200 text/plain, no redirect, and exactly the stub for that path.
+          stub() {
+            path="$1"
+            case "$path" in
+              *.ps1) want="throw 'use https://$HOST$path (this installer is served over https only)'" ;;
+              *) want="echo 'error: use https://$HOST$path (this installer is served over https only)' >&2; exit 1" ;;
+            esac
+            url="http://$HOST$path"
+            code=$(curl -sS -o "$RUNNER_TEMP/body" -D "$RUNNER_TEMP/headers" -w '%{http_code}' "$url") || return 1
+            [ "$code" = 200 ] || { echo "$url: HTTP $code"; return 1; }
+            grep -qi '^content-type: text/plain' "$RUNNER_TEMP/headers" || { echo "$url: not text/plain"; return 1; }
+            if grep -qi '^location:' "$RUNNER_TEMP/headers"; then echo "$url: redirects"; return 1; fi
+            printf '%s\n' "$want" | cmp -s - "$RUNNER_TEMP/body" || { echo "$url: not the https-only stub"; return 1; }
+            echo "$url: 200, text/plain, the https-only stub"
+          }
           for _ in $(seq 1 60); do
             ok=1
-            for scheme in https http; do
-              check "$scheme://$HOST/" site/install.sh || ok=0
-              check "$scheme://$HOST" site/install.sh || ok=0
-              for f in site/*; do
-                check "$scheme://$HOST/$(basename "$f")" "$f" || ok=0
-              done
+            check "https://$HOST/" site/install.sh || ok=0
+            check "https://$HOST" site/install.sh || ok=0
+            stub / || ok=0
+            for f in site/*; do
+              check "https://$HOST/$(basename "$f")" "$f" || ok=0
+              stub "/$(basename "$f")" || ok=0
             done
             [ "$ok" = 1 ] && exit 0
             sleep 10
@@ -111,12 +129,19 @@ jobs:
           # No driver: the list and usage, exit 1.
           if out=$(curl -sS "https://$HOST" | sh 2>&1); then echo "$out"; echo "::error::no driver chosen, yet exit 0"; exit 1; fi
           echo "$out" | grep -F "no driver chosen: pick one of: oracle db2 quack gizmosql chargewire hardcharger"
-          # A real install over plain http, in a throwaway HOME, loaded by name.
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install -q adbc-driver-manager==1.13.0
           export HOME="$RUNNER_TEMP/home"
           mkdir -p "$HOME"
-          curl -sS "http://$HOST/oracle" | sh
+          # Plain http (and a scheme-less URL, which curl takes as http) runs only the stub: it
+          # prints the https URL, exits non-zero, and installs nothing.
+          for url in "http://$HOST/oracle" "$HOST/oracle"; do
+            if out=$(curl -sS "$url" | sh 2>&1); then echo "$out"; echo "::error::$url | sh exited 0"; exit 1; fi
+            echo "$out" | grep -F "error: use https://$HOST/oracle"
+          done
+          "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py --driver oracle --absent
+          # A real install, in a throwaway HOME, loaded by name.
+          curl -sS "https://$HOST/oracle" | sh
           "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py --driver oracle
           curl -sS "https://$HOST/oracle" | sh -s -- --uninstall
           "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py --driver oracle --absent
@@ -135,7 +160,7 @@ jobs:
           check --driver oracle --name oracle-gizmodata
           curl "https://$HOST/oracle" | sh -s -- --name oracle-gizmodata --uninstall
           check --driver oracle --name oracle-gizmodata --absent
-          curl "http://$HOST/db2" | sh
+          curl "https://$HOST/db2" | sh
           check --driver db2
           curl "https://$HOST/db2" | sh -s -- --uninstall
           check --driver db2 --absent
