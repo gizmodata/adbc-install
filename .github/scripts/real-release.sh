@@ -13,12 +13,9 @@
 # without the installer), checked against what its releases had when this was written:
 #   - no archive for this platform: the installer must say "has no build for <platform>"; but a
 #     platform listed in builds_of() below must have one (its loss is a failure);
-#   - no SHA256SUMS and no <archive>.sha256: the installer must refuse ("publishes no checksums").
-#     gizmosql, chargewire and hardcharger's releases up to gizmosql 2.0.18, chargewire 2.4.0 and
-#     hardcharger 2.6.0 have no checksums, so for them this check expects the refusal until their
-#     first release with SHA256SUMS, and from then on expects (and checks) a real install. Their
-#     releases adding SHA256SUMS are being shipped on 2026-11-18, which flips this automatically.
-#     oracle, db2 and quack already publish checksums: a release of theirs without them fails.
+#   - no SHA256SUMS and no <archive>.sha256: a failure. Every driver's latest release has
+#     published checksums since 2026-11-18 (gizmosql 2.0.19, chargewire 2.4.1 and hardcharger 2.6.1
+#     were the first of theirs; this check expected the installer's refusal until they shipped).
 #   - otherwise: install, load by name, uninstall.
 set -eu
 
@@ -109,17 +106,7 @@ for d in oracle db2 quack gizmosql chargewire hardcharger; do
   [ -n "$listed" ] || echo "note: $d $tag now has a $PLATFORM build; add it to builds_of()"
 
   if ! exists "$base/SHA256SUMS" && ! exists "$base/$asset.sha256"; then
-    case "$d" in
-      gizmosql|chargewire|hardcharger) ;;
-      *) bad "$tag publishes no checksums; $d's releases have had them"; continue ;;
-    esac
-    # Expected until the driver's first release with SHA256SUMS (see the comment at the top).
-    echo "$d $tag has no checksums yet: the installer must refuse it"
-    if installer "$PIN" -- ; then bad "the installer installed $tag without checksums"; continue; fi
-    has "publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify" \
-      || bad "refused, but not for the missing checksums"
-    [ ! -e "$D/$d.toml" ] || bad "a manifest was written anyway"
-    by_name --absent || bad "'$d' loads although nothing was installed"
+    bad "$tag publishes no checksums; $d's releases have had them"
     continue
   fi
 

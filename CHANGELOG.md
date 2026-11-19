@@ -23,7 +23,9 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 - Options as environment variables or flags: `ADBC_VERSION`, `ADBC_DIR`, `ADBC_SYSTEM`,
   `ADBC_NAME`, `ADBC_ARCHIVE`, `ADBC_BASE_URL`, `ADBC_UNINSTALL`.
 - Every download is checked against the release's `SHA256SUMS` (or `<archive>.sha256`); a mismatch
-  or a release without checksums is refused. The library's header must match the machine.
+  or a release without checksums is refused. The library (at the archive's root or one folder
+  down) must have a header for this machine. A release with no build for this platform is refused
+  with the list of platforms it has builds for.
 - Another vendor's `<name>.toml` is moved to `<name>.toml.replaced-<UTC time>` and replaced, with
   the command that restores it printed; `--name` installs side by side instead.
 - Tests: fixture releases from a stand-in for github.com on Linux (amd64, arm64, Oracle Linux 8),
