@@ -55,10 +55,10 @@ conn = adbc_driver_manager.dbapi.connect(driver="oracle", uri="oracle://scott:ti
 | [`hardcharger`](https://github.com/gizmodata/hardcharger-adbc) | `/hardcharger`, `/hardcharger.ps1` | Hardcharger | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
 
 Each driver's README describes its URI and options. The installer verifies every download
-against the release's checksums, so it installs only releases that publish them: `oracle`,
-`db2` and `quack` from the releases above on, `gizmosql` from 2.0.19 and `chargewire` from 2.4.1.
-`hardcharger` 2.6.0, its latest release today, publishes none and is refused with a message that
-says so; its next release adds `SHA256SUMS`.
+against the release's checksums, so it installs only releases that publish them: every driver's
+latest release does (`gizmosql` from 2.0.19, `chargewire` from 2.4.1 and `hardcharger` from 2.6.1
+on). Asking for an older release of those three that has none (`ADBC_VERSION=2.0.18` for
+`gizmosql`, for example) is refused with a message that says so.
 
 The Linux builds need glibc, not musl (so not Alpine); the tests run them on Oracle Linux 8 (glibc 2.28) and newer.
 
@@ -160,10 +160,9 @@ through the ADBC driver manager ([`check_driver_by_name.py`](.github/scripts/che
 gives each driver a URI with its own scheme pointing where nothing listens, and requires the error
 only that driver writes), then uninstalled; on `oracle` also a pinned version, another driver's
 manifest replaced and restored, and `--name`. On Linux x86-64 and arm64 (dash as `/bin/sh`),
-Oracle Linux 8 (glibc 2.28), macOS arm64, and Windows x64 and ARM64 under both PowerShells. A driver
-whose latest release publishes no checksums must be refused, and one without a build for the
-platform must say so; both expectations are read from the release itself, so the checks turn into
-real installs as soon as such a release ships.
+Oracle Linux 8 (glibc 2.28), macOS arm64, and Windows x64 and ARM64 under both PowerShells. A
+latest release without checksums fails the check, and a release without a build for the platform
+(db2 on Windows ARM64) must be refused with a message that says so.
 
 Run them locally (each uses a throwaway `HOME`):
 

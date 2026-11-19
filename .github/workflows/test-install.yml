@@ -7,9 +7,7 @@ name: Test installers
 #   local stand-in for github.com (fake_github.py).
 # - Real-release checks (real-release.sh, windows-real-release.ps1): every driver's real latest
 #   release, installed by its own script and loaded by name through the ADBC driver manager. A
-#   driver whose latest release has no checksums yet (gizmosql, chargewire and hardcharger, until
-#   their releases with SHA256SUMS ship) must be refused; the check flips to a real install by
-#   itself once such a release exists (see real-release.sh).
+#   latest release without checksums, or without a build for a platform it has had, fails.
 #
 # Both gate the deploy (deploy.yml) and the GitHub Release (release.yml). "CI result" is the one
 # check main's branch protection requires.

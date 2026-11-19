@@ -1,9 +1,7 @@
 # Every driver's real latest release on Windows, installed by its own script (as a file, and for
 # oracle also the way `irm | iex` runs it), loaded by name through the ADBC driver manager
 # (check_driver_by_name.py), then uninstalled. The Windows twin of real-release.sh: see its header
-# for how each driver's expected outcome is decided, including gizmosql, chargewire and hardcharger,
-# whose latest releases have no checksums yet, so they must be refused until a release with
-# SHA256SUMS ships (then this expects, and checks, a real install).
+# for how each driver's expected outcome is decided (a latest release without checksums fails).
 #
 # It installs into this user's real %LOCALAPPDATA%\ADBC\Drivers (the driver manager reads the known
 # folder, not the environment variable): run it on a throwaway CI machine.
@@ -85,14 +83,7 @@ foreach ($d in $repos.Keys) {
   if (-not $listed) { Write-Host "note: $d $tag now has a $platform build; add it to `$builds" }
 
   if (-not (Test-Exists "$base/SHA256SUMS") -and -not (Test-Exists "$base/$asset.sha256")) {
-    if ($d -notin @('gizmosql', 'chargewire', 'hardcharger')) { Bad "$tag publishes no checksums; $d's releases have had them"; continue }
-    # Expected until the driver's first release with SHA256SUMS (see real-release.sh's header).
-    Write-Host "$d $tag has no checksums yet: the installer must refuse it"
-    if (Invoke-Installer $d -envs $pin) { Bad "the installer installed $tag without checksums"; continue }
-    if (-not $last.Contains("publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify")) { Bad 'refused, but not for the missing checksums' }
-    if (Test-Path -LiteralPath "$drv\$d.toml") { Bad 'a manifest was written anyway' }
-    if (-not (Test-ByName @('--absent'))) { Bad "'$d' loads although nothing was installed" }
-    continue
+    Bad "$tag publishes no checksums; $d's releases have had them"; continue
   }
 
   Write-Host "$d ${tag}: install, load by name, uninstall"
