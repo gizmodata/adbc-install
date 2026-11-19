@@ -7,6 +7,8 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-11-19
+
 ### Security
 
 Fixes from an independent review of the installers (findings F5 to F10):
