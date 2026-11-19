@@ -128,7 +128,7 @@ jobs:
           set -u
           # No driver: the list and usage, exit 1.
           if out=$(curl -sS "https://$HOST" | sh 2>&1); then echo "$out"; echo "::error::no driver chosen, yet exit 0"; exit 1; fi
-          echo "$out" | grep -F "no driver chosen: pick one of: oracle db2 quack gizmosql chargewire hardcharger"
+          echo "$out" | grep -F "no driver chosen: pick one of: hardcharger chargewire gizmosql oracle db2 quack"
           python3 -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/bin/pip" install -q adbc-driver-manager==1.13.0
           export HOME="$RUNNER_TEMP/home"
@@ -152,24 +152,22 @@ jobs:
           set -u
           export HOME="$RUNNER_TEMP/home2" && mkdir -p "$HOME"
           check() { "$RUNNER_TEMP/venv/bin/python" -I .github/scripts/check_driver_by_name.py "$@"; }
-          curl "https://$HOST/oracle" | ADBC_VERSION=1.0.6 sh
-          check --driver oracle
-          curl "https://$HOST" | sh -s -- oracle
-          check --driver oracle
+          curl "https://$HOST/hardcharger" | sh
+          check --driver hardcharger
+          curl "https://$HOST/hardcharger" | ADBC_VERSION=2.6.1 sh
+          check --driver hardcharger
+          curl "https://$HOST" | sh -s -- hardcharger
+          check --driver hardcharger
+          curl "https://$HOST/hardcharger" | sh -s -- --uninstall
+          check --driver hardcharger --absent
           curl "https://$HOST/oracle" | sh -s -- --name oracle-gizmodata
           check --driver oracle --name oracle-gizmodata
           curl "https://$HOST/oracle" | sh -s -- --name oracle-gizmodata --uninstall
           check --driver oracle --name oracle-gizmodata --absent
-          curl "https://$HOST/db2" | sh
-          check --driver db2
-          curl "https://$HOST/db2" | sh -s -- --uninstall
-          check --driver db2 --absent
-          curl "https://$HOST/oracle" | sh -s -- --uninstall
-          check --driver oracle --absent
-          curl "https://$HOST/oracle" | sudo sh -s -- --system
-          sudo test -f /etc/adbc/drivers/oracle.toml
-          curl "https://$HOST/oracle" | sudo sh -s -- --system --uninstall
-          sudo test ! -e /etc/adbc/drivers/oracle.toml
+          curl "https://$HOST/hardcharger" | sudo sh -s -- --system
+          sudo test -f /etc/adbc/drivers/hardcharger.toml
+          curl "https://$HOST/hardcharger" | sudo sh -s -- --system --uninstall
+          sudo test ! -e /etc/adbc/drivers/hardcharger.toml
 
       - name: Deployment record (result)
         if: always() && steps.deployment.outputs.id
@@ -199,13 +197,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $py = "$env:RUNNER_TEMP\venv\Scripts\python.exe"
           function Check([string[]]$a) { & $py -I .github\scripts\check_driver_by_name.py @a; if ($LASTEXITCODE) { exit 1 } }
-          irm https://install.adbc.gizmodata.com/oracle.ps1 | iex
-          Check @('--driver', 'oracle')
-          $env:ADBC_VERSION = '1.0.6'; irm https://install.adbc.gizmodata.com/oracle.ps1 | iex
+          irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
+          Check @('--driver', 'hardcharger')
+          $env:ADBC_VERSION = '2.6.1'; irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
           Remove-Item Env:\ADBC_VERSION
-          Check @('--driver', 'oracle')
-          & ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/oracle.ps1))) -Uninstall
-          Check @('--driver', 'oracle', '--absent')
+          Check @('--driver', 'hardcharger')
+          & ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/hardcharger.ps1))) -Uninstall
+          Check @('--driver', 'hardcharger', '--absent')
           EOF
       - name: PowerShell 7
         shell: pwsh

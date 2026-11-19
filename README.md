@@ -10,7 +10,7 @@
 
 The one-line installer for GizmoData's [ADBC](https://arrow.apache.org/adbc/) drivers, served at
 <https://install.adbc.gizmodata.com>. It installs a driver for every ADBC driver manager on the
-machine (C/C++, Go, Python, R, Rust, ...), so that `driver = "oracle"` (or `"db2"`, `"quack"`, ...)
+machine (C/C++, Go, Python, R, Rust, ...), so that `driver = "hardcharger"` (or `"chargewire"`, `"oracle"`, ...)
 loads it by name, with no path to give and no Python package to install.
 
 ## ⚡ Install
@@ -18,9 +18,9 @@ loads it by name, with no path to give and no Python package to install.
 **macOS and Linux**
 
 ```bash
-curl https://install.adbc.gizmodata.com/oracle | sh                  # the latest Oracle driver
-curl https://install.adbc.gizmodata.com/oracle | ADBC_VERSION=1.0.6 sh
-curl https://install.adbc.gizmodata.com | sh                         # no driver: the list and usage
+curl https://install.adbc.gizmodata.com/hardcharger | sh                  # the latest Hardcharger driver
+curl https://install.adbc.gizmodata.com/hardcharger | ADBC_VERSION=2.6.1 sh
+curl https://install.adbc.gizmodata.com | sh                              # no driver: the list and usage
 ```
 
 No `-fsSL` is needed: every URL answers with the script itself, as `text/plain`, with no redirect.
@@ -31,29 +31,38 @@ anyone on the network path could swap a script sent over http.
 **Windows (Windows PowerShell 5.1 or PowerShell 7)**
 
 ```powershell
-irm https://install.adbc.gizmodata.com/oracle.ps1 | iex
-$env:ADBC_VERSION = '1.0.6'; irm https://install.adbc.gizmodata.com/oracle.ps1 | iex
-& ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/oracle.ps1))) -Uninstall
+irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
+$env:ADBC_VERSION = '2.6.1'; irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
+& ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/hardcharger.ps1))) -Uninstall
 ```
 
-Then, from any ADBC driver manager, for example Python's (`pip install adbc-driver-manager pyarrow`):
+Then, from any ADBC driver manager, for example Python's (`pip install adbc-driver-manager pyarrow`),
+here against a local Hardcharger server (`HARDCHARGER_ADMIN_PASSWORD=change-me hardcharger-server`,
+which listens on port 31337 without TLS):
 
 ```python
 import adbc_driver_manager.dbapi
 
-conn = adbc_driver_manager.dbapi.connect(driver="oracle", uri="oracle://scott:tiger@localhost:1521/FREEPDB1")
+with adbc_driver_manager.dbapi.connect(
+    driver="hardcharger",
+    uri="hardcharger://localhost?tls=false",
+    db_kwargs={"username": "hardcharger", "password": "change-me"},
+) as conn:
+    with conn.cursor() as cur:
+        cur.execute("SELECT 42 AS answer")
+        print(cur.fetchone())
 ```
 
 ## 🗃️ Drivers
 
 | Driver | Path | For | Builds |
 |---|---|---|---|
+| [`hardcharger`](https://github.com/gizmodata/hardcharger-adbc) | `/hardcharger`, `/hardcharger.ps1` | Hardcharger | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
+| [`chargewire`](https://github.com/gizmodata/chargewire-adbc) | `/chargewire`, `/chargewire.ps1` | any Chargewire server | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
+| [`gizmosql`](https://github.com/gizmodata/gizmosql-adbc) | `/gizmosql`, `/gizmosql.ps1` | GizmoSQL (Arrow Flight SQL) | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
 | [`oracle`](https://github.com/gizmodata/adbc-driver-oracle) | `/oracle`, `/oracle.ps1` | Oracle Database, pure Go (no Oracle Client libraries) | Linux x86-64/arm64, macOS arm64, Windows x64/ARM64 |
 | [`db2`](https://github.com/gizmodata/adbc-driver-db2) | `/db2`, `/db2.ps1` | IBM Db2, pure Go (no IBM CLI libraries) | Linux x86-64/arm64, macOS arm64, Windows x64 |
 | [`quack`](https://github.com/gizmodata/adbc-driver-quack) | `/quack`, `/quack.ps1` | DuckDB's Quack remote protocol | Linux x86-64/arm64, macOS arm64, Windows x64/ARM64 |
-| [`gizmosql`](https://github.com/gizmodata/gizmosql-adbc) | `/gizmosql`, `/gizmosql.ps1` | GizmoSQL (Arrow Flight SQL) | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
-| [`chargewire`](https://github.com/gizmodata/chargewire-adbc) | `/chargewire`, `/chargewire.ps1` | any Chargewire server | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
-| [`hardcharger`](https://github.com/gizmodata/hardcharger-adbc) | `/hardcharger`, `/hardcharger.ps1` | Hardcharger | Linux x86-64/arm64, macOS x86-64/arm64, Windows x64/ARM64 |
 
 Each driver's README describes its URI and options. The installer verifies every download
 against the release's checksums, so it installs only releases that publish them: every driver's
@@ -80,10 +89,10 @@ Set an environment variable for the `sh` (or `iex`) that runs the script, or pas
 | `<driver>` | `-Driver`, or the first argument | `ADBC_DRIVER` | only for the generic script at `/` (`/install.sh`) and `/install.ps1` |
 
 ```bash
-curl https://install.adbc.gizmodata.com | sh -s -- oracle                       # by name, from the generic script
-curl https://install.adbc.gizmodata.com/oracle | sh -s -- --name oracle-gizmodata
-curl https://install.adbc.gizmodata.com/oracle | sh -s -- --uninstall
-curl https://install.adbc.gizmodata.com/oracle | sudo sh -s -- --system
+curl https://install.adbc.gizmodata.com | sh -s -- hardcharger                  # by name, from the generic script
+curl https://install.adbc.gizmodata.com/hardcharger | sh -s -- --uninstall
+curl https://install.adbc.gizmodata.com/hardcharger | sudo sh -s -- --system
+curl https://install.adbc.gizmodata.com/oracle | sh -s -- --name oracle-gizmodata  # beside another Oracle driver
 ```
 
 ## 🗂️ What it installs, and where

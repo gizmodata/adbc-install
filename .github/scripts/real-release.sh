@@ -83,7 +83,7 @@ bad() { echo "::error::$d: $*"; failures=$((failures + 1)); }
 has() { grep -F -- "$1" "$OUT" >/dev/null; }
 by_name() { "$PY" -I "$HERE/check_driver_by_name.py" --driver "$d" "$@"; }
 
-for d in oracle db2 quack gizmosql chargewire hardcharger; do
+for d in hardcharger chargewire gizmosql oracle db2 quack; do
   printf '\n### %s\n' "$d"
   repo="gizmodata/$(repo_of "$d")"
   latest="$(curl -sSIL --retry 4 --retry-delay 3 -o /dev/null -w '%{url_effective}' "https://github.com/$repo/releases/latest")"

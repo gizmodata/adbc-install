@@ -16,6 +16,10 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
   one-liner fails loudly instead of running a script anyone on the path could have swapped. The README drops the
   `curl http://…` example; the deploy checks that https serves these exact files and http only the stub, and that
   `curl http://… | sh` exits non-zero and installs nothing.
+- Hardcharger first: the drivers are listed in the order hardcharger, chargewire, gizmosql, oracle,
+  db2, quack (the bare URL's list, "unknown driver" and "no driver chosen" errors, the README's
+  table), and the README's examples install Hardcharger (`ADBC_VERSION=2.6.1` for a pinned one),
+  with a Python example that queries a local Hardcharger server.
 
 ## [1.0.0] - 2026-11-18
 

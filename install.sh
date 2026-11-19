@@ -5,7 +5,7 @@
 #   curl https://install.adbc.gizmodata.com/oracle | ADBC_VERSION=1.0.6 sh  # a given version
 #   curl https://install.adbc.gizmodata.com | sh -s -- oracle               # the same, by name
 #
-# Installs one of GizmoData's ADBC drivers (oracle, db2, quack, gizmosql, chargewire, hardcharger)
+# Installs one of GizmoData's ADBC drivers (hardcharger, chargewire, gizmosql, oracle, db2, quack)
 # from its GitHub release for every ADBC driver manager on this machine (C/C++, Go, Python, R,
 # Rust, ...), so that `driver = "<name>"` loads it:
 #
@@ -42,7 +42,7 @@ set -eu
 ADBC_INSTALL_PRESET=""
 
 INSTALL_URL="https://install.adbc.gizmodata.com"
-DRIVERS="oracle db2 quack gizmosql chargewire hardcharger"
+DRIVERS="hardcharger chargewire gizmosql oracle db2 quack"
 # For tests only: another github.com (fake_github.py). Plain http is allowed only then.
 GH="${ADBC_INSTALL_GITHUB:-https://github.com}"
 GH="${GH%/}"
@@ -65,12 +65,12 @@ fatal() { printf '%serror:%s %s\n' "${R}${B}" "$N" "$*" >&2; exit 1; }
 #   by_tag:  libadbc_driver_<d>-v<version>-<macos|linux|windows>_<amd64|arm64>.tar.gz
 driver_info() {
   case "$1" in
+    hardcharger) REPO=gizmodata/hardcharger-adbc;   ENTRY=AdbcDriverHardchargerInit; TITLE="Hardcharger"; MNAME="Hardcharger";             LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="Hardcharger" ;;
+    chargewire)  REPO=gizmodata/chargewire-adbc;    ENTRY=AdbcDriverChargewireInit;  TITLE="Chargewire";  MNAME="Chargewire";              LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="any Chargewire server" ;;
+    gizmosql)    REPO=gizmodata/gizmosql-adbc;      ENTRY=AdbcDriverInit;            TITLE="GizmoSQL";    MNAME="GizmoSQL";                LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="GizmoSQL (Arrow Flight SQL)" ;;
     oracle)      REPO=gizmodata/adbc-driver-oracle; ENTRY=AdbcDriverOracleInit;      TITLE="Oracle";      MNAME="ADBC Oracle Driver - Go"; LICENSE=MIT;        NAMING=by_os;  ABOUT="Oracle Database, pure Go (no Oracle Client libraries)" ;;
     db2)         REPO=gizmodata/adbc-driver-db2;    ENTRY=AdbcDriverDb2Init;         TITLE="Db2";         MNAME="ADBC Db2 Driver - Go";    LICENSE=MIT;        NAMING=by_os;  ABOUT="IBM Db2, pure Go (no IBM CLI libraries)" ;;
     quack)       REPO=gizmodata/adbc-driver-quack;  ENTRY=AdbcDriverQuackInit;       TITLE="Quack";       MNAME="ADBC Quack Driver - Go";  LICENSE=MIT;        NAMING=by_os;  ABOUT="DuckDB's Quack remote protocol" ;;
-    gizmosql)    REPO=gizmodata/gizmosql-adbc;      ENTRY=AdbcDriverInit;            TITLE="GizmoSQL";    MNAME="GizmoSQL";                LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="GizmoSQL (Arrow Flight SQL)" ;;
-    chargewire)  REPO=gizmodata/chargewire-adbc;    ENTRY=AdbcDriverChargewireInit;  TITLE="Chargewire";  MNAME="Chargewire";              LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="any Chargewire server" ;;
-    hardcharger) REPO=gizmodata/hardcharger-adbc;   ENTRY=AdbcDriverHardchargerInit; TITLE="Hardcharger"; MNAME="Hardcharger";             LICENSE=Apache-2.0; NAMING=by_tag; ABOUT="Hardcharger" ;;
     *) return 1 ;;
   esac
   LIB="libadbc_driver_$1"

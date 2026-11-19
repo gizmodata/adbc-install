@@ -3,8 +3,8 @@
     GizmoData ADBC driver installer for Windows (Windows PowerShell 5.1 and PowerShell 7).
 
 .DESCRIPTION
-    Installs one of GizmoData's ADBC drivers (oracle, db2, quack, gizmosql, chargewire,
-    hardcharger) from its GitHub release for every ADBC driver manager on this machine (C/C++, Go,
+    Installs one of GizmoData's ADBC drivers (hardcharger, chargewire, gizmosql, oracle,
+    db2, quack) from its GitHub release for every ADBC driver manager on this machine (C/C++, Go,
     Python, R, Rust, ...), so that `driver = "<name>"` loads it:
 
         <drivers dir>\<name>\<version>\   the release's library (and its LICENSE/NOTICE files)
@@ -64,7 +64,7 @@ try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::S
 $AdbcInstallPreset = ''
 
 $InstallUrl = 'https://install.adbc.gizmodata.com'
-$Drivers = @('oracle', 'db2', 'quack', 'gizmosql', 'chargewire', 'hardcharger')
+$Drivers = @('hardcharger', 'chargewire', 'gizmosql', 'oracle', 'db2', 'quack')
 # For tests only: another github.com (fake_github.py).
 $Gh = if ($env:ADBC_INSTALL_GITHUB) { $env:ADBC_INSTALL_GITHUB.TrimEnd('/') } else { 'https://github.com' }
 # Run as a file, a failure exits non-zero; piped into iex, it throws (exit would close the window).
@@ -79,12 +79,12 @@ function Fail([string]$m) { $e = New-Object System.Exception $m; $e.Data['adbc-i
 #   by_tag: libadbc_driver_<d>-v<version>-windows_<amd64|arm64>.tar.gz
 function Get-DriverInfo([string]$d) {
   $t = switch ($d) {
+    'hardcharger' { @{ Repo = 'gizmodata/hardcharger-adbc';   Entry = 'AdbcDriverHardchargerInit'; Title = 'Hardcharger'; MName = 'Hardcharger';             License = 'Apache-2.0'; Naming = 'by_tag'; About = 'Hardcharger' } }
+    'chargewire'  { @{ Repo = 'gizmodata/chargewire-adbc';    Entry = 'AdbcDriverChargewireInit';  Title = 'Chargewire';  MName = 'Chargewire';              License = 'Apache-2.0'; Naming = 'by_tag'; About = 'any Chargewire server' } }
+    'gizmosql'    { @{ Repo = 'gizmodata/gizmosql-adbc';      Entry = 'AdbcDriverInit';            Title = 'GizmoSQL';    MName = 'GizmoSQL';                License = 'Apache-2.0'; Naming = 'by_tag'; About = 'GizmoSQL (Arrow Flight SQL)' } }
     'oracle'      { @{ Repo = 'gizmodata/adbc-driver-oracle'; Entry = 'AdbcDriverOracleInit';      Title = 'Oracle';      MName = 'ADBC Oracle Driver - Go'; License = 'MIT';        Naming = 'by_os';  About = 'Oracle Database, pure Go (no Oracle Client libraries)' } }
     'db2'         { @{ Repo = 'gizmodata/adbc-driver-db2';    Entry = 'AdbcDriverDb2Init';         Title = 'Db2';         MName = 'ADBC Db2 Driver - Go';    License = 'MIT';        Naming = 'by_os';  About = 'IBM Db2, pure Go (no IBM CLI libraries)' } }
     'quack'       { @{ Repo = 'gizmodata/adbc-driver-quack';  Entry = 'AdbcDriverQuackInit';       Title = 'Quack';       MName = 'ADBC Quack Driver - Go';  License = 'MIT';        Naming = 'by_os';  About = "DuckDB's Quack remote protocol" } }
-    'gizmosql'    { @{ Repo = 'gizmodata/gizmosql-adbc';      Entry = 'AdbcDriverInit';            Title = 'GizmoSQL';    MName = 'GizmoSQL';                License = 'Apache-2.0'; Naming = 'by_tag'; About = 'GizmoSQL (Arrow Flight SQL)' } }
-    'chargewire'  { @{ Repo = 'gizmodata/chargewire-adbc';    Entry = 'AdbcDriverChargewireInit';  Title = 'Chargewire';  MName = 'Chargewire';              License = 'Apache-2.0'; Naming = 'by_tag'; About = 'any Chargewire server' } }
-    'hardcharger' { @{ Repo = 'gizmodata/hardcharger-adbc';   Entry = 'AdbcDriverHardchargerInit'; Title = 'Hardcharger'; MName = 'Hardcharger';             License = 'Apache-2.0'; Naming = 'by_tag'; About = 'Hardcharger' } }
     default { $null }
   }
   if ($t) { $t.Lib = "libadbc_driver_$d" }
