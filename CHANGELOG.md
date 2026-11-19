@@ -7,6 +7,16 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+### Changed
+
+- **Plain http no longer serves the installers.** `http://install.adbc.gizmodata.com/<path>` (and a
+  scheme-less `curl install.adbc.gizmodata.com/<path>`) answers 200 with a one-line stub,
+  `echo 'error: use https://install.adbc.gizmodata.com/<path> …' >&2; exit 1` (`throw '…'` for `*.ps1`), from a
+  CloudFront Function (gizmodata-infrastructure-terraform `aws/dns/installers_https_only.tf`), so a piped http
+  one-liner fails loudly instead of running a script anyone on the path could have swapped. The README drops the
+  `curl http://…` example; the deploy checks that https serves these exact files and http only the stub, and that
+  `curl http://… | sh` exits non-zero and installs nothing.
+
 ## [1.0.0] - 2026-11-18
 
 ### Added

@@ -20,12 +20,13 @@ loads it by name, with no path to give and no Python package to install.
 ```bash
 curl https://install.adbc.gizmodata.com/oracle | sh                  # the latest Oracle driver
 curl https://install.adbc.gizmodata.com/oracle | ADBC_VERSION=1.0.6 sh
-curl http://install.adbc.gizmodata.com/db2 | sh                      # plain http works too
 curl https://install.adbc.gizmodata.com | sh                         # no driver: the list and usage
 ```
 
-No `-fsSL` is needed: every URL answers with the script itself, as `text/plain`, over https and
-plain http, with no redirect.
+No `-fsSL` is needed: every URL answers with the script itself, as `text/plain`, with no redirect.
+Use `https://`: plain `http://` (and a URL typed without a scheme, which curl takes as http) never
+serves the script, only a one-line stub that prints the https URL and exits non-zero, because
+anyone on the network path could swap a script sent over http.
 
 **Windows (Windows PowerShell 5.1 or PowerShell 7)**
 
