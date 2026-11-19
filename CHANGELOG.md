@@ -15,6 +15,10 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
   they load.
 - **Every action is pinned to a full commit SHA** (F3), with its version in a comment
   (`actions/checkout@3d3c42e… # v7.0.1`, `aws-actions/configure-aws-credentials@e125382… # v6.3.0`, …).
+- **Every deploy waits for Philip's approval** (review finding F4): the `deploy` job runs in the
+  `production` environment (required reviewer prmoore77, admin bypass allowed, `main` only), and the
+  deploy role trusts that environment's OIDC subject. GitHub records the deployments itself, so
+  the workflow no longer writes deployment records through the API.
 - `check_workflows.py` (in the lint job) fails on an unpinned action or a credentialed job that
   installs packages, pipes into a shell or runs Python.
 

@@ -184,7 +184,9 @@ PYTHON=<python with adbc-driver-manager> .github/scripts/real-release.sh
 
 ## 🚀 Deploy
 
-[`deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`. Its `deploy` job is the only
+[`deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`, and its upload waits
+for Philip's approval in the `production` environment (the only required reviewer; admins may
+bypass; `main` only). Its `deploy` job is the only
 one that can reach AWS, and it runs nothing it downloads; a separate `verify` job, with no AWS
 access, runs the live one-liners. Every action is pinned to a commit SHA
 ([`check_workflows.py`](.github/scripts/check_workflows.py) enforces both). Only after the tests
