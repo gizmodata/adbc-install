@@ -6,6 +6,12 @@ name: Deploy
 # check the live URLs (https, no -L) serve exactly these files and plain http serves only the
 # https-only stub, and run the one-liners.
 #
+# Two jobs, so the AWS session never meets third-party code (security review F2): `deploy` holds the
+# OIDC token and only checks out, builds, uploads, invalidates and byte-compares the live files
+# (curl and cmp, nothing downloaded is run); `verify` has no id-token permission and does
+# everything that runs downloaded code: pip installs, `curl | sh` of the live site, and loading the
+# drivers it installs.
+#
 # AWS access is GitHub OIDC to the role in the repo variable AWS_DEPLOY_ROLE_ARN, which trusts only
 # this repo's main branch (the `sub` claim carries the org and repo IDs:
 # repo:gizmodata@181902052/adbc-install@1463434488:ref:refs/heads/main) and may only write the
@@ -45,8 +51,10 @@ jobs:
       contents: read
       id-token: write
       deployments: write
+    outputs:
+      deployment: ${{ steps.deployment.outputs.id }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Deployment record (in progress)
         id: deployment
@@ -61,7 +69,7 @@ jobs:
       - name: Build the served files
         run: .github/scripts/build-site.sh site
 
-      - uses: aws-actions/configure-aws-credentials@v6
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
@@ -123,6 +131,24 @@ jobs:
           echo "::error::the live installers didn't match this commit after 10 minutes"
           exit 1
 
+      - name: Deployment record (failed)
+        if: failure() && steps.deployment.outputs.id
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/deployments/${{ steps.deployment.outputs.id }}/statuses" -X POST \
+            -f state=failure -f environment_url="https://$HOST" >/dev/null
+
+  # Runs what the live site serves: no id-token here, so nothing it downloads can reach AWS.
+  verify:
+    needs: deploy
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      deployments: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
       - name: The served one-liners run
         run: |
           set -u
@@ -170,22 +196,24 @@ jobs:
           sudo test ! -e /etc/adbc/drivers/hardcharger.toml
 
       - name: Deployment record (result)
-        if: always() && steps.deployment.outputs.id
+        if: always() && needs.deploy.outputs.deployment
         env:
           GH_TOKEN: ${{ github.token }}
           STATE: ${{ job.status == 'success' && 'success' || 'failure' }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/deployments/${{ steps.deployment.outputs.id }}/statuses" -X POST \
+          gh api "repos/$GITHUB_REPOSITORY/deployments/${{ needs.deploy.outputs.deployment }}/statuses" -X POST \
             -f state="$STATE" -f environment_url="https://$HOST" >/dev/null
 
   # The Windows one-liners from the README, against the live site, under both PowerShells.
   live-windows:
     name: live one-liners (windows-2025)
     needs: deploy
+    permissions:
+      contents: read
     runs-on: windows-2025
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - name: The ADBC driver manager

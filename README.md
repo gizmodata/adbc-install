@@ -184,7 +184,10 @@ PYTHON=<python with adbc-driver-manager> .github/scripts/real-release.sh
 
 ## 🚀 Deploy
 
-[`deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`. Only after the tests
+[`deploy.yml`](.github/workflows/deploy.yml) runs on every push to `main`. Its `deploy` job is the only
+one that can reach AWS, and it runs nothing it downloads; a separate `verify` job, with no AWS
+access, runs the live one-liners. Every action is pinned to a commit SHA
+([`check_workflows.py`](.github/scripts/check_workflows.py) enforces both). Only after the tests
 pass does it build the served files ([`build-site.sh`](.github/scripts/build-site.sh): `install.sh`
 and `install.ps1`, and for each driver `<driver>` and `<driver>.ps1`, the same scripts with the
 driver preset in one line), upload them as `text/plain` to the private S3 bucket

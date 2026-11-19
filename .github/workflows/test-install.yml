@@ -52,13 +52,15 @@ jobs:
     # x64: the PowerShell parse and PSScriptAnalyzer step uses the pwsh preinstalled on this image.
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: shellcheck
         run: shellcheck -s sh install.sh .github/scripts/*.sh
       - name: Syntax check with dash and bash
         run: dash -n install.sh && bash -n install.sh
       - name: Python scripts compile
         run: python3 -m py_compile .github/scripts/*.py
+      - name: Workflows pin every action to a commit SHA, and no credentialed job runs downloaded code
+        run: python3 .github/scripts/check_workflows.py
       - name: The served files build (one preset line per driver)
         run: .github/scripts/build-site.sh "$RUNNER_TEMP/site"
       - name: Platform checks with fake uname/ldd/sysctl (dash, bash)
@@ -88,8 +90,8 @@ jobs:
           - { name: 'macos-arm64 (macos-15; sh, dash)', runner: macos-15, shells: 'sh dash' }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - name: Every scenario against fixture releases
@@ -105,7 +107,7 @@ jobs:
     container: oraclelinux:8
     steps:
       - run: dnf install -y -q python3.11 tar gzip findutils diffutils wget && ln -sf /usr/bin/python3.11 /usr/local/bin/python3
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       # The runner's container user is root, so the --system step is skipped here (it runs on the others).
       - run: SH='sh' .github/scripts/fixture-scenarios.sh
 
@@ -116,7 +118,7 @@ jobs:
     runs-on: ubuntu-24.04
     container: alpine:3.22
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Refused with the musl explanation, before any download
         env:
           ADBC_INSTALL_GITHUB: http://127.0.0.1:9
@@ -141,8 +143,8 @@ jobs:
           - { name: windows-arm64 (windows-11-arm), runner: windows-11-arm }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - name: Build the served files
@@ -170,8 +172,8 @@ jobs:
           - { name: 'macos-arm64, macos-15', runner: macos-15 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - name: The ADBC driver manager
@@ -190,7 +192,7 @@ jobs:
     container: oraclelinux:8
     steps:
       - run: dnf install -y -q python3.11 tar gzip findutils diffutils
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: The ADBC driver manager
         run: python3.11 -m venv /tmp/venv && /tmp/venv/bin/pip install -q "$ADBC_DRIVER_MANAGER"
       - name: Every driver's latest release, installed and loaded by name
@@ -209,8 +211,8 @@ jobs:
           - { name: windows-arm64, runner: windows-11-arm }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
       - name: The ADBC driver manager
