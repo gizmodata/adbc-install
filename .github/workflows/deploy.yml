@@ -23,6 +23,13 @@ name: Deploy
 on:
   push:
     branches: [main]
+    # Documentation never reaches the served site (only install.sh, install.ps1 and the scripts
+    # generated from them do), so a docs-only push needs no deploy and no approval.
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'LICENSE'
+      - 'NOTICE'
   workflow_dispatch:
 
 permissions:

@@ -19,7 +19,7 @@ loads it by name, with no path to give and no Python package to install.
 
 ```bash
 curl https://install.adbc.gizmodata.com/hardcharger | sh                  # the latest Hardcharger driver
-curl https://install.adbc.gizmodata.com/hardcharger | ADBC_VERSION=2.6.1 sh
+curl https://install.adbc.gizmodata.com/hardcharger | ADBC_VERSION=2.6.2 sh
 curl https://install.adbc.gizmodata.com | sh                              # no driver: the list and usage
 ```
 
@@ -32,7 +32,7 @@ anyone on the network path could swap a script sent over http.
 
 ```powershell
 irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
-$env:ADBC_VERSION = '2.6.1'; irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
+$env:ADBC_VERSION = '2.6.2'; irm https://install.adbc.gizmodata.com/hardcharger.ps1 | iex
 & ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/hardcharger.ps1))) -Uninstall
 ```
 

@@ -7,6 +7,12 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+### Changed
+
+- The README's pinned-version examples use hardcharger 2.6.2, the release without a forced garbage
+  collection per statement.
+- A push that changes only documentation no longer starts a deploy (and its approval): nothing in it is served.
+
 ## [1.1.0] - 2026-11-19
 
 ### Security
