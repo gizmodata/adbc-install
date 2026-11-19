@@ -17,8 +17,9 @@
         $env:ADBC_VERSION = '1.0.6'; irm https://install.adbc.gizmodata.com/oracle.ps1 | iex
         & ([scriptblock]::Create((irm https://install.adbc.gizmodata.com/install.ps1))) oracle -Version 1.0.6
 
-    The archive is checked against the release's SHA256SUMS (or <archive>.sha256) before anything
-    is installed; a release with neither, or a mismatch, is refused. Another driver's <name>.toml
+    The archive is checked before anything is installed, against the release's SHA256SUMS (or
+    <archive>.sha256), always read from the GitHub release over https, or against -Sha256; a
+    release with no checksums, or a mismatch, is refused. Another driver's <name>.toml
     (one whose url is not ours) is moved aside to <name>.toml.replaced-<UTC time> first, and the
     installer prints the command that puts it back; -Name installs side by side instead.
 
@@ -33,9 +34,15 @@
 .PARAMETER Name
     Install under another manifest name, side by side with a driver that has this one. Also $env:ADBC_NAME.
 .PARAMETER Archive
-    Install this local release archive; nothing is downloaded. Also $env:ADBC_ARCHIVE.
+    Install this local release archive (checked against the GitHub release's checksums, or
+    -Sha256). Also $env:ADBC_ARCHIVE.
 .PARAMETER BaseUrl
-    Where the release files are (a mirror of the GitHub release's downloads). Also $env:ADBC_BASE_URL.
+    Download the archive from a mirror of the GitHub release's downloads (it is still checked
+    against the GitHub release's checksums, or -Sha256). Also $env:ADBC_BASE_URL.
+.PARAMETER Sha256
+    The archive's SHA-256: check against it and fetch no checksums. Also $env:ADBC_SHA256.
+.PARAMETER AllowHttp
+    Let -BaseUrl be a plain http:// mirror. Also $env:ADBC_ALLOW_HTTP = '1'.
 .PARAMETER Uninstall
     Remove the manifest and <drivers dir>\<name>\. Also $env:ADBC_UNINSTALL = '1'.
 
@@ -51,6 +58,8 @@ param(
   [string]$Name = '',
   [string]$Archive = '',
   [string]$BaseUrl = '',
+  [string]$Sha256 = '',
+  [switch]$AllowHttp,
   [switch]$Uninstall,
   [switch]$Help
 )
@@ -65,7 +74,7 @@ $AdbcInstallPreset = ''
 
 $InstallUrl = 'https://install.adbc.gizmodata.com'
 $Drivers = @('hardcharger', 'chargewire', 'gizmosql', 'oracle', 'db2', 'quack')
-# For tests only: another github.com (fake_github.py).
+# For tests only: another github.com (fake_github.py); plain http also needs ADBC_INSTALL_TEST_INSECURE=1.
 $Gh = if ($env:ADBC_INSTALL_GITHUB) { $env:ADBC_INSTALL_GITHUB.TrimEnd('/') } else { 'https://github.com' }
 # Run as a file, a failure exits non-zero; piped into iex, it throws (exit would close the window).
 $RunAsFile = [bool]$PSCommandPath
@@ -115,8 +124,11 @@ function Get-Usage {
   $lines.Add('  -Version <v>      ADBC_VERSION      X.Y.Z or vX.Y.Z (default: the latest release)')
   $lines.Add('  -Dir <dir>        ADBC_DIR          drivers directory (default %LOCALAPPDATA%\ADBC\Drivers)')
   $lines.Add('  -Name <name>      ADBC_NAME         install under another name, side by side')
-  $lines.Add('  -Archive <file>   ADBC_ARCHIVE      install a local release archive, download nothing')
-  $lines.Add('  -BaseUrl <url>    ADBC_BASE_URL     a mirror of the release''s files')
+  $lines.Add('  -Archive <file>   ADBC_ARCHIVE      install a local release archive (still checked against')
+  $lines.Add('                                      the release''s checksums, or -Sha256)')
+  $lines.Add('  -BaseUrl <url>    ADBC_BASE_URL     download the archive from a mirror (checked the same way)')
+  $lines.Add('  -Sha256 <hex>     ADBC_SHA256       the archive''s SHA-256, for a machine without github.com')
+  $lines.Add('  -AllowHttp        ADBC_ALLOW_HTTP=1 allow a plain http:// -BaseUrl')
   $lines.Add('  -Uninstall        ADBC_UNINSTALL=1  remove the driver''s manifest and libraries')
   $lines.Add('')
   $lines.Add("macOS and Linux: curl $InstallUrl/$(if ($AdbcInstallPreset) { $AdbcInstallPreset } else { '<driver>' }) | sh")
@@ -132,9 +144,11 @@ function Test-Flag([string]$value, [string]$what) {
   }
 }
 
+# "1.2.3" or "v1.2.3" -> "1.2.3": ASCII digits and letters only, and \z (not $, which also
+# matches before a final line break) so the whole value must match.
 function ConvertTo-Version([string]$v) {
-  $n = $v -replace '^v', ''
-  if ($n -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') { return $null }
+  $n = $v -creplace '^v', ''
+  if ($n -cnotmatch '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?\z') { return $null }
   return $n
 }
 
@@ -143,7 +157,17 @@ function Get-Url([string]$url, [string]$file) {
   $script:LastError = ''
   for ($try = 1; $try -le 3; $try++) {
     try {
-      Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $file
+      $r = Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $file -PassThru
+      # Windows PowerShell 5.1 follows a redirect from https to http: an https download must end
+      # on https. (5.1 has BaseResponse.ResponseUri, PowerShell 7 the request message's URI.)
+      $final = $null
+      try { $final = $r.BaseResponse.ResponseUri } catch {}
+      if (-not $final) { try { $final = $r.BaseResponse.RequestMessage.RequestUri } catch {} }
+      if ($url -like 'https://*' -and $final -and $final.Scheme -ne 'https') {
+        Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+        $script:LastError = "redirected from https to plain http ($final)"
+        return 0
+      }
       return 200
     } catch {
       $resp = $_.Exception.Response
@@ -164,7 +188,13 @@ function Get-RedirectTarget([string]$url) {
     $request.Method = 'HEAD'
     $request.AllowAutoRedirect = $true
     $response = $request.GetResponse()
-    try { return $response.ResponseUri.AbsoluteUri } finally { $response.Close() }
+    try {
+      if ($url -like 'https://*' -and $response.ResponseUri.Scheme -ne 'https') {
+        $script:LastError = "redirected from https to plain http ($($response.ResponseUri))"
+        return ''
+      }
+      return $response.ResponseUri.AbsoluteUri
+    } finally { $response.Close() }
   } catch {
     $script:LastError = $_.Exception.Message
     return ''
@@ -219,6 +249,44 @@ function Get-DllPlatform([string]$path) {
   }
 }
 
+# The repository a <drivers dir>\<name>\ folder was made for, from its .adbc-install marker:
+# "url = <repo url>" (and the one-line form 1.0.0 wrote), or '' when there is no such line.
+function Get-MarkerUrl([string]$marker) {
+  foreach ($line in [IO.File]::ReadAllLines($marker)) {
+    if ($line -cmatch '^url = (https://github\.com/[^ ;]+)\z') { return $Matches[1] }
+    if ($line -cmatch '^Made by [^ ]+ for (https://github\.com/[^ ;]+); removed by -{1,2}[Uu]ninstall\.\z') { return $Matches[1] }
+  }
+  return ''
+}
+
+# The checksum $asset must have: -Sha256, else the release's SHA256SUMS (or <asset>.sha256) read
+# from the GitHub release over https, wherever the archive itself came from.
+function Get-ExpectedSha256($info, [string]$ver, [string]$asset, [string]$sha, [string]$tmp) {
+  if ($sha) { return @($sha, '-Sha256') }
+  $base = "$Gh/$($info.Repo)/releases/download/v$ver"
+  $sums = Join-Path $tmp 'SHA256SUMS'
+  $code = Get-Url "$base/SHA256SUMS" $sums
+  if ($code -eq 200) {
+    $want = Get-SumsEntry $sums $asset $false
+    if (-not $want) { Fail "the release's SHA256SUMS has no line for $asset; not installing it" }
+    return @($want, 'SHA256SUMS')
+  }
+  if ($code -eq 404) {
+    $one = Join-Path $tmp 'asset.sha256'
+    $code = Get-Url "$base/$asset.sha256" $one
+    if ($code -eq 200) {
+      $want = Get-SumsEntry $one $asset $true
+      if (-not $want) { Fail "$asset.sha256 is not a checksum of $asset; not installing it" }
+      return @($want, "$asset.sha256")
+    }
+    if ($code -eq 404) {
+      Fail "$($info.Title) $ver publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify. Install a release that has them, or check $asset yourself and pass its SHA-256 with -Sha256 <hex>."
+    }
+    Fail "could not download $base/$asset.sha256 (HTTP $code) $script:LastError to check $asset; on a machine without github.com, pass the archive's SHA-256 with -Sha256 <hex>"
+  }
+  Fail "could not download $base/SHA256SUMS (HTTP $code) $script:LastError to check $asset; on a machine without github.com, pass the archive's SHA-256 with -Sha256 <hex>"
+}
+
 function Format-Literal([string]$s) { "'" + $s.Replace("'", "''") + "'" }
 
 # Ours: the manifest's url is our repository's (this script, the driver's own Python package, or a
@@ -231,6 +299,11 @@ function Test-Ours([string]$manifest, [string]$ourUrl) {
 
 function Invoke-Main {
   if ($Help) { Write-Host (Get-Usage); return }
+  if ($Gh -like 'http://*') {
+    if ($env:ADBC_INSTALL_TEST_INSECURE -ne '1') { Fail "ADBC_INSTALL_GITHUB is a test setting and must be https:// (got $Gh)" }
+  } elseif ($Gh -notlike 'https://*') {
+    Fail "ADBC_INSTALL_GITHUB must be an https:// URL (got $Gh)"
+  }
   $drv = if ($AdbcInstallPreset) { $AdbcInstallPreset } elseif ($Driver) { $Driver } else { [string]$env:ADBC_DRIVER }
   if ($AdbcInstallPreset -and $Driver -and $Driver -ne $AdbcInstallPreset) {
     Fail "unexpected argument: $Driver (this is the $AdbcInstallPreset installer; see -Help)"
@@ -248,13 +321,26 @@ function Invoke-Main {
   $nameArg = if ($Name) { $Name } else { [string]$env:ADBC_NAME }
   $archiveArg = if ($Archive) { $Archive } else { [string]$env:ADBC_ARCHIVE }
   $baseArg = if ($BaseUrl) { $BaseUrl } else { [string]$env:ADBC_BASE_URL }
+  $shaArg = if ($Sha256) { $Sha256 } else { [string]$env:ADBC_SHA256 }
+  $allowHttp = [bool]$AllowHttp -or (Test-Flag ([string]$env:ADBC_ALLOW_HTTP) 'ADBC_ALLOW_HTTP')
+  if ($shaArg) {
+    if ($shaArg -cnotmatch '^[0-9A-Fa-f]{64}\z') { Fail "ADBC_SHA256/-Sha256 must be 64 hexadecimal digits (got '$shaArg')" }
+    $shaArg = $shaArg.ToLowerInvariant()
+  }
+  if ($baseArg) {
+    if ($baseArg -like 'http://*') {
+      if (-not $allowHttp) { Fail "-BaseUrl $baseArg is plain http: pass -AllowHttp (ADBC_ALLOW_HTTP=1) to download from it (the archive is still checked against the GitHub release's checksums, or -Sha256)" }
+    } elseif ($baseArg -notlike 'https://*') {
+      Fail "-BaseUrl must be an https:// URL (got '$baseArg')"
+    }
+  }
   $doUninstall = [bool]$Uninstall -or (Test-Flag ([string]$env:ADBC_UNINSTALL) 'ADBC_UNINSTALL')
   if ([bool]$System -or (Test-Flag ([string]$env:ADBC_SYSTEM) 'ADBC_SYSTEM')) {
     Fail 'the system-wide level on Windows is the registry, which this installer does not write; it installs per user (or into -Dir)'
   }
 
   $mname = if ($nameArg) { $nameArg } else { $drv }
-  if ($mname -notmatch '^[A-Za-z0-9_-][A-Za-z0-9_.-]*$') {
+  if ($mname -cnotmatch '^[A-Za-z0-9_-][A-Za-z0-9_.-]*\z') {
     Fail "-Name must be letters, digits, '_', '-' or '.', not starting with '.' (got '$mname')"
   }
 
@@ -278,6 +364,9 @@ function Invoke-Main {
   $libRoot = Join-Path $dirPath $mname
   $marker = Join-Path $libRoot '.adbc-install'
   $ourUrl = "https://github.com/$($info.Repo)"
+  # The folder's owner, per its marker: ours, another driver's (from this installer), or none.
+  $dirOwner = ''
+  if (Test-Path -LiteralPath $marker -PathType Leaf) { $dirOwner = Get-MarkerUrl $marker; if (-not $dirOwner) { $dirOwner = 'unknown' } }
 
   if ($doUninstall) {
     $removed = $false
@@ -289,9 +378,11 @@ function Invoke-Main {
         Note "$manifest belongs to another driver (its url is not $ourUrl); left as it is"
       }
     }
-    if (Test-Path -LiteralPath $marker -PathType Leaf) {
+    if ($dirOwner -eq $ourUrl) {
       Remove-Item -LiteralPath $libRoot -Recurse -Force
       $removed = $true; Info "Removed $libRoot"
+    } elseif ($dirOwner) {
+      Note "$libRoot holds another driver's files (installed for $dirOwner); left as it is"
     } elseif (Test-Path -LiteralPath $libRoot) {
       Note "$libRoot was not made by this installer; left as it is"
     }
@@ -311,22 +402,29 @@ function Invoke-Main {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ('adbc-install-' + [Guid]::NewGuid().ToString('N'))
   New-Item -ItemType Directory -Path $tmp | Out-Null
   $stage = $null
+  $old = $null
   try {
-    if (-not $archiveArg) {
-      if (-not $ver) {
-        # /releases/latest redirects to /releases/tag/<tag>: no GitHub API call, so no rate limit.
-        $latest = Get-RedirectTarget "$Gh/$($info.Repo)/releases/latest"
-        if ($latest -notmatch '/releases/tag/([^/?#]+)$') {
-          Fail "could not find the latest $($info.Title) release at $Gh/$($info.Repo)/releases/latest $script:LastError (try again, or set `$env:ADBC_VERSION)"
-        }
-        $tagName = [Uri]::UnescapeDataString($Matches[1])
-        $ver = ConvertTo-Version $tagName
-        if (-not $ver) { Fail "the latest $($info.Title) release is tagged '$tagName', which is not a version this installer knows; set `$env:ADBC_VERSION" }
+    if (-not $ver -and $archiveArg) {
+      # Archives named by tag carry the version: libadbc_driver_<d>-v1.2.3-<platform>.tar.gz
+      $leaf = [IO.Path]::GetFileName($archiveArg)
+      if ($leaf -cmatch ('^' + [regex]::Escape($info.Lib) + '-v?([0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?)-[a-z]+_[a-z0-9]+\.tar\.gz\z')) { $ver = $Matches[1] }
+      else { Fail "can't tell the version of $leaf from its name; set `$env:ADBC_VERSION (or -Version) with -Archive" }
+    }
+    if (-not $ver) {
+      # /releases/latest redirects to /releases/tag/<tag>: no GitHub API call, so no rate limit.
+      $latest = Get-RedirectTarget "$Gh/$($info.Repo)/releases/latest"
+      if ($latest -notmatch '/releases/tag/([^/?#]+)$') {
+        Fail "could not find the latest $($info.Title) release at $Gh/$($info.Repo)/releases/latest $script:LastError (try again, or set `$env:ADBC_VERSION)"
       }
-      $tag = "v$ver"
-      $asset = Get-AssetName $info $ver $platform
-      $base = if ($baseArg) { $baseArg.TrimEnd('/') } else { "$Gh/$($info.Repo)/releases/download/$tag" }
+      $tagName = [Uri]::UnescapeDataString($Matches[1])
+      $ver = ConvertTo-Version $tagName
+      if (-not $ver) { Fail "the latest $($info.Title) release is tagged '$tagName', which is not a version this installer knows; set `$env:ADBC_VERSION" }
+    }
+    $tag = "v$ver"
+    $asset = Get-AssetName $info $ver $platform
 
+    if (-not $archiveArg) {
+      $base = if ($baseArg) { $baseArg.TrimEnd('/') } else { "$Gh/$($info.Repo)/releases/download/$tag" }
       Info "Downloading the $($info.Title) ADBC driver $ver for $platform"
       $archivePath = Join-Path $tmp $asset
       $code = Get-Url "$base/$asset" $archivePath
@@ -342,43 +440,17 @@ function Invoke-Main {
         }
         Fail "could not download $base/$asset (HTTP $code) $script:LastError"
       }
-
-      # The checksum: the release's SHA256SUMS, else <asset>.sha256. Never install unverified bytes.
-      $sums = Join-Path $tmp 'SHA256SUMS'
-      $code = Get-Url "$base/SHA256SUMS" $sums
-      if ($code -eq 200) {
-        $want = Get-SumsEntry $sums $asset $false
-        if (-not $want) { Fail "the release's SHA256SUMS has no line for $asset; not installing it" }
-        $from = 'SHA256SUMS'
-      } elseif ($code -eq 404) {
-        $one = Join-Path $tmp 'asset.sha256'
-        $code = Get-Url "$base/$asset.sha256" $one
-        if ($code -eq 200) {
-          $want = Get-SumsEntry $one $asset $true
-          if (-not $want) { Fail "$asset.sha256 is not a checksum of $asset; not installing it" }
-          $from = "$asset.sha256"
-        } elseif ($code -eq 404) {
-          Fail "$($info.Title) $ver publishes no checksums (neither SHA256SUMS nor $asset.sha256 is in the release), and this installer never installs files it cannot verify. Install a release that has them, or check $asset yourself and pass -Archive <file>."
-        } else {
-          Fail "could not download $base/$asset.sha256 (HTTP $code) $script:LastError"
-        }
-      } else {
-        Fail "could not download $base/SHA256SUMS (HTTP $code) $script:LastError"
-      }
-      $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
-      if ($got -ne $want) { Fail "checksum mismatch for ${asset}: $from says $want, the download is $got; not installing it" }
-      Info "Checksum OK ($from)"
     } else {
       if (-not (Test-Path -LiteralPath $archiveArg -PathType Leaf)) { Fail "no such archive: $archiveArg" }
       $archivePath = (Resolve-Path -LiteralPath $archiveArg).Path
-      if (-not $ver) {
-        # Archives named by tag carry the version: libadbc_driver_<d>-v1.2.3-<platform>.tar.gz
-        $leaf = [IO.Path]::GetFileName($archivePath)
-        if ($leaf -match ('^' + [regex]::Escape($info.Lib) + '-v?(\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)-[a-z]+_[a-z0-9]+\.tar\.gz$')) { $ver = $Matches[1] }
-        else { Fail "can't tell the version of $leaf from its name; set `$env:ADBC_VERSION (or -Version) with -Archive" }
-      }
       Info "Installing the $($info.Title) ADBC driver $ver for $platform from $archivePath"
     }
+
+    # Never install unverified bytes.
+    $want, $from = Get-ExpectedSha256 $info $ver $asset $shaArg $tmp
+    $got = (Get-FileHash -Algorithm SHA256 -LiteralPath $archivePath).Hash.ToLowerInvariant()
+    if ($got -ne $want) { Fail "checksum mismatch for ${asset}: $from says $want, the archive is $got; not installing it" }
+    Info "Checksum OK ($from)"
 
     # tar.exe (bsdtar) ships with Windows 10 1803 and later.
     $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
@@ -387,6 +459,9 @@ function Invoke-Main {
     New-Item -ItemType Directory -Path $extract | Out-Null
     $tarOut = & $tar -xzf $archivePath -C $extract 2>&1
     if ($LASTEXITCODE -ne 0) { Fail "could not unpack $([IO.Path]::GetFileName($archivePath)): $tarOut" }
+    # Only regular files and folders: no links (reparse points), which a copy would follow.
+    $odd = @(Get-ChildItem -LiteralPath $extract -Recurse -Force | Where-Object { $_.Attributes -band [IO.FileAttributes]::ReparsePoint }) | Select-Object -First 1
+    if ($odd) { Fail "$([IO.Path]::GetFileName($archivePath)) holds $($odd.FullName.Substring($extract.Length + 1)), which is not a regular file or folder; not installing it" }
     # The library is at the archive's root (oracle, db2) or in its one top folder (the others).
     $dlls = @(Get-ChildItem -LiteralPath $extract -File -Filter "$($info.Lib).dll") +
       @(Get-ChildItem -LiteralPath $extract -Directory | ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -File -Filter "$($info.Lib).dll" })
@@ -396,17 +471,27 @@ function Invoke-Main {
     if ($built -ne $platform) { Fail "$([IO.Path]::GetFileName($archivePath)) holds a $built library, and this machine is ${platform}: is it the right archive?" }
 
     New-Item -ItemType Directory -Force -Path $dirPath | Out-Null
-    if ((Test-Path -LiteralPath $libRoot) -and -not (Test-Path -LiteralPath $marker) -and @(Get-ChildItem -LiteralPath $libRoot -Force).Count) {
+    if ($dirOwner -and $dirOwner -ne $ourUrl) {
+      Fail "$libRoot holds another driver's files (installed for $dirOwner); uninstall that one, or pass -Name <other name>"
+    }
+    if ((Test-Path -LiteralPath $libRoot) -and -not $dirOwner -and @(Get-ChildItem -LiteralPath $libRoot -Force).Count) {
       Fail "$libRoot exists and was not made by this installer; move it away, or pass -Name <other name>"
     }
     New-Item -ItemType Directory -Force -Path $libRoot | Out-Null
-    [IO.File]::WriteAllText($marker, "Made by $InstallUrl for $ourUrl; removed by -Uninstall.`n", (New-Object Text.UTF8Encoding $false))
+    [IO.File]::WriteAllText($marker, "# Made by $InstallUrl; -Uninstall removes this folder.`nurl = $ourUrl`n", (New-Object Text.UTF8Encoding $false))
     $dest = Join-Path $libRoot $ver
     $stage = Join-Path $libRoot ".staging.$PID"
     if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
     New-Item -ItemType Directory -Path $stage | Out-Null
-    Copy-Item -Path (Join-Path ([Management.Automation.WildcardPattern]::Escape($dlls[0].Directory.FullName)) '*') -Destination $stage -Force
-    if (Test-Path -LiteralPath $dest) { Remove-Item -LiteralPath $dest -Recurse -Force }
+    foreach ($f in @(Get-ChildItem -LiteralPath $dlls[0].Directory.FullName -File -Force)) {
+      Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $stage $f.Name) -Force
+    }
+    # The new version goes into place before the old one is removed.
+    if (Test-Path -LiteralPath $dest) {
+      $old = Join-Path $libRoot ".old.$PID"
+      if (Test-Path -LiteralPath $old) { Remove-Item -LiteralPath $old -Recurse -Force }
+      [IO.Directory]::Move($dest, $old)
+    }
     [IO.Directory]::Move($stage, $dest)
     $stage = $null
     $libPath = Join-Path $dest "$($info.Lib).dll"
@@ -453,8 +538,9 @@ function Invoke-Main {
 
     # Earlier versions this installer put here are no longer in use (a running program may still
     # hold one open: it stays until the next install).
-    foreach ($old in @(Get-ChildItem -LiteralPath $libRoot -Directory)) {
-      if ($old.FullName -ne $dest) { Remove-Item -LiteralPath $old.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+    if ($old) { Remove-Item -LiteralPath $old -Recurse -Force -ErrorAction SilentlyContinue }
+    foreach ($o in @(Get-ChildItem -LiteralPath $libRoot -Directory)) {
+      if ($o.FullName -ne $dest) { Remove-Item -LiteralPath $o.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     }
 
     Info "Installed the $($info.Title) ADBC driver $ver"

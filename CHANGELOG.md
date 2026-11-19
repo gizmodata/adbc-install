@@ -7,6 +7,29 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+### Security
+
+Fixes from an independent review of the installers (findings F5 to F10):
+
+- **Checksums always come from the GitHub release** (over https), also when the archive comes from
+  `--base-url` or `--archive`: a mirror's own `SHA256SUMS` is no longer trusted, so a mirror can't
+  vouch for a build it serves. New `--sha256` / `ADBC_SHA256` / `-Sha256` gives the archive's
+  SHA-256 for a machine that can't reach github.com. `--archive` without either is refused (it was
+  installed unchecked). An `http://` `--base-url` needs `--allow-http` / `ADBC_ALLOW_HTTP=1`.
+- **Versions are checked as a whole value**: `ADBC_VERSION` with a line break (which `install.sh`
+  accepted when any line was a version, and wrote into the manifest) or non-ASCII digits
+  (`install.ps1`) is refused.
+- **`install.sh` runs from `main()`, called on its last line**: a download cut short runs nothing
+  (a cut after the old library was removed used to leave a manifest pointing at nothing). A
+  reinstall now moves the new version into place before removing the old one.
+- **`<name>/.adbc-install` records the driver's repository**: another driver's script with the same
+  `--name` no longer installs into, or uninstalls, that folder. Folders marked by 1.0.0 are still
+  recognised.
+- **Archives may hold only regular files and folders**: a symbolic link, device or named pipe is
+  refused (a link was copied by its target's contents); installed files get fixed permissions.
+- **https only through redirects** for wget and Windows PowerShell 5.1 too (curl already was), and
+  the test-only `ADBC_INSTALL_GITHUB` override refuses `http://` unless `ADBC_INSTALL_TEST_INSECURE=1`.
+
 ### Security (workflows)
 
 - **The deploy's AWS session never meets downloaded code** (review finding F2): `deploy` (the only

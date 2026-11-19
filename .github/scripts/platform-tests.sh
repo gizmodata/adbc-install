@@ -34,7 +34,7 @@ chmod +x "$FAKE"/*
 check() {
   name="$1"; msg="$2"; shift 2
   set +e
-  out="$(env PATH="$FAKE:$PATH" HOME="$ROOT/home" ADBC_INSTALL_GITHUB=http://127.0.0.1:9 ADBC_DRIVER=oracle \
+  out="$(env PATH="$FAKE:$PATH" HOME="$ROOT/home" ADBC_INSTALL_GITHUB=http://127.0.0.1:9 ADBC_INSTALL_TEST_INSECURE=1 ADBC_DRIVER=oracle \
     "$@" "$SH" -s < "$INSTALLER" 2>&1)"
   code=$?
   set -e

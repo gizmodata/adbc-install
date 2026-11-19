@@ -83,8 +83,10 @@ Set an environment variable for the `sh` (or `iex`) that runs the script, or pas
 | `--dir <dir>` | `-Dir` | `ADBC_DIR` | the drivers directory (default: the per-user one, below) |
 | `--system` | | `ADBC_SYSTEM=1` | the system-wide drivers directory (run it with `sudo`); not on Windows, whose system level is the registry |
 | `--name <name>` | `-Name` | `ADBC_NAME` | install under another name, side by side with a driver that has this one |
-| `--archive <file>` | `-Archive` | `ADBC_ARCHIVE` | install a release archive you already have; nothing is downloaded |
-| `--base-url <url>` | `-BaseUrl` | `ADBC_BASE_URL` | a mirror of the release's files (`<url>/<archive>`, `<url>/SHA256SUMS`); pass a version too |
+| `--archive <file>` | `-Archive` | `ADBC_ARCHIVE` | install a release archive you already have; it is still checked against the GitHub release's checksums (or `--sha256`) |
+| `--base-url <url>` | `-BaseUrl` | `ADBC_BASE_URL` | download the archive from a mirror (`<url>/<archive>`); it is checked against the GitHub release's checksums, not the mirror's (or `--sha256`) |
+| `--sha256 <hex>` | `-Sha256` | `ADBC_SHA256` | the archive's SHA-256 (from the release's `SHA256SUMS`), for a machine that can't reach github.com: check against it, fetch no checksums |
+| `--allow-http` | `-AllowHttp` | `ADBC_ALLOW_HTTP=1` | allow a plain `http://` `--base-url` (the archive is checked all the same) |
 | `--uninstall` | `-Uninstall` | `ADBC_UNINSTALL=1` | remove the driver's manifest and libraries |
 | `<driver>` | `-Driver`, or the first argument | `ADBC_DRIVER` | only for the generic script at `/` (`/install.sh`) and `/install.ps1` |
 
@@ -139,14 +141,24 @@ To keep both, install GizmoData's under another name with `--name` (then load it
   musl (Alpine), 32-bit and other processors, and points Git Bash on Windows to the PowerShell
   installer.
 - **The download.** It checks the archive against the release's `SHA256SUMS`, or
-  `<archive>.sha256` when there is no `SHA256SUMS`. A mismatch, a `SHA256SUMS` without a line for
-  the archive, or a release with no checksums at all is refused: it never installs bytes it
-  could not verify.
+  `<archive>.sha256` when there is no `SHA256SUMS`, always read from the GitHub release over https,
+  also when the archive came from `--base-url` or `--archive` (a mirror's own checksums are never
+  trusted); `--sha256` replaces them for a machine that can't reach github.com. A mismatch, a
+  `SHA256SUMS` without a line for the archive, or a release with no checksums at all is refused:
+  it never installs bytes it could not verify. Downloads use https only, through every redirect
+  (curl, wget and both PowerShells).
+- **The archive's contents.** Only regular files and folders: an archive holding a link, a device
+  or a pipe is refused. The installed files get fixed permissions (0644, the library 0755).
+- **The version.** `ADBC_VERSION` must be one line of `[0-9A-Za-z.-]` matching `X.Y.Z[-suffix]`.
 - **The library.** It must be in the archive, and its header must be for this machine (ELF,
   Mach-O or PE, and the processor), so an archive for another platform is refused.
 - **Nothing half-written.** The manifest is written next to its final place and renamed into it,
   as UTF-8 without a byte order mark, with the path as a TOML string (backslashes and quotes
-  escaped). A failed download or check changes nothing.
+  escaped). A failed download or check changes nothing. All of `install.sh` runs from a function
+  called on its last line, so a download cut short runs nothing.
+- **Each driver's own folder.** `<drivers dir>/<name>/.adbc-install` records which driver's
+  repository the folder was made for: another driver's script (say `db2 --name oracle`) neither
+  installs into it nor removes it.
 
 ## 🧪 Tests
 
