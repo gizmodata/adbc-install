@@ -30,9 +30,10 @@ SITE="$ROOT/site"
 export HOME="$ROOT/home dir"
 mkdir -p "$HOME"
 OUT="$ROOT/out"
-unset ADBC_DRIVER ADBC_VERSION ADBC_DIR ADBC_SYSTEM ADBC_NAME ADBC_ARCHIVE ADBC_BASE_URL ADBC_UNINSTALL XDG_CONFIG_HOME 2>/dev/null || true
+unset ADBC_DRIVER ADBC_VERSION ADBC_DIR ADBC_SYSTEM ADBC_NAME ADBC_ARCHIVE ADBC_BASE_URL ADBC_UNINSTALL ADBC_SHA256 ADBC_ALLOW_HTTP XDG_CONFIG_HOME 2>/dev/null || true
 DEAD=http://127.0.0.1:9
-export ADBC_INSTALL_GITHUB="$DEAD"
+# The stand-in for github.com is plain http, which the installer allows only with the test flag.
+export ADBC_INSTALL_GITHUB="$DEAD" ADBC_INSTALL_TEST_INSECURE=1
 
 step() { printf '\n### %s\n' "$*"; }
 fail() { echo "::error::$*"; [ -f "$OUT" ] && sed 's/^/  | /' "$OUT"; exit 1; }
@@ -140,6 +141,25 @@ b="$ROOT/build/deep"; mkdir -p "$b/a/b"; fake_lib "$ARCH" "$b/a/b/libadbc_driver
 printf '%s  %s\n' "$(sum "$F/adbc-driver-oracle/v9.9.1/$(asset_of oracle 9.9.1)")" "$(asset_of oracle 9.9.1)" > "$F/adbc-driver-oracle/v9.9.1/SHA256SUMS"
 release chargewire 9.9.7 mismatch
 release gizmosql 9.9.6 sums
+
+# A mirror that serves its own build of oracle 9.9.8, with a SHA256SUMS that matches it.
+M="$ROOT/fixtures/evil/mirror/v9.9.8"
+mkdir -p "$M" "$ROOT/build/evil"
+fake_lib "$ARCH" "$ROOT/build/evil/libadbc_driver_oracle.$EXT"
+echo "NOT-THE-REAL-DRIVER" >> "$ROOT/build/evil/libadbc_driver_oracle.$EXT"
+(cd "$ROOT/build/evil" && tar -czf "$M/$(asset_of oracle 9.9.8)" -- *)
+printf '%s  %s\n' "$(sum "$M/$(asset_of oracle 9.9.8)")" "$(asset_of oracle 9.9.8)" > "$M/SHA256SUMS"
+# Archives holding a symbolic link and a named pipe (with matching checksums).
+odd_release() {  # odd_release <version> <link|fifo>
+  b="$ROOT/build/odd-$1"; mkdir -p "$b"
+  fake_lib "$ARCH" "$b/libadbc_driver_oracle.$EXT"
+  if [ "$2" = link ]; then ln -s /etc/hosts "$b/NOTICE"; else mkfifo "$b/NOTICE"; fi
+  d="$F/adbc-driver-oracle/v$1"; mkdir -p "$d"
+  (cd "$b" && tar -czf "$d/$(asset_of oracle "$1")" -- *)
+  printf '%s  %s\n' "$(sum "$d/$(asset_of oracle "$1")")" "$(asset_of oracle "$1")" > "$d/SHA256SUMS"
+}
+odd_release 9.8.1 link
+odd_release 9.8.2 fifo
 
 "$PY" "$HERE/fake_github.py" --root "$ROOT/fixtures" --port-file "$ROOT/port" --log "$ROOT/requests.log" 2>"$ROOT/server.err" &
 PIDS="$PIDS $!"
@@ -361,31 +381,115 @@ same "$Q/oracle.toml" "$FOREIGN"
 run 0 -- "$SITE/oracle" --dir "$Q" --uninstall
 [ ! -e "$Q/oracle" ] || fail "uninstall in a quoted directory left the libraries"
 
-step "15. --archive installs a local file and fetches nothing"
+step "15. --archive: checked against the release's checksums, or --sha256"
 A="$ROOT/archives dir"
 mkdir -p "$A"
 cp "$F/chargewire-adbc/v9.9.8/$(asset_of chargewire 9.9.8)" "$A/"
 cp "$F/adbc-driver-oracle/v9.9.8/$(asset_of oracle 9.9.8)" "$A/"
-before="$(wc -l < "$ROOT/requests.log")"
-run 0 -- "$SITE/chargewire" --archive "$A/$(asset_of chargewire 9.9.8)"
+# shellcheck disable=SC2086
+run 0 $GH -- "$SITE/chargewire" --archive "$A/$(asset_of chargewire 9.9.8)"
 expect "Installing the Chargewire ADBC driver 9.9.8 for $PLATFORM from $A/"
+expect "Checksum OK (SHA256SUMS)"
 manifest_ok "$D/chargewire.toml" chargewire 9.9.8
 run nonzero -- "$SITE/oracle" --archive "$A/$(asset_of oracle 9.9.8)"
 expect "can't tell the version of $(asset_of oracle 9.9.8) from its name; pass ADBC_VERSION=X.Y.Z with ADBC_ARCHIVE"
-env ADBC_VERSION=9.9.8 "ADBC_ARCHIVE=$A/$(asset_of oracle 9.9.8)" "$SH" -s < "$SITE/oracle" > "$OUT" 2>&1 || fail "ADBC_ARCHIVE failed"
+# Without github.com and without --sha256 it can't be checked, so it is refused.
+run nonzero ADBC_VERSION=9.9.8 -- "$SITE/oracle" --archive "$A/$(asset_of oracle 9.9.8)"
+expect "to check $(asset_of oracle 9.9.8); on a machine without github.com, pass the archive's SHA-256 with ADBC_SHA256=<hex>"
+# With --sha256 (or ADBC_SHA256), nothing is fetched.
+good="$(sum "$A/$(asset_of oracle 9.9.8)")"
+before="$(wc -l < "$ROOT/requests.log")"
+env ADBC_VERSION=9.9.8 "ADBC_ARCHIVE=$A/$(asset_of oracle 9.9.8)" "ADBC_SHA256=$good" "$SH" -s < "$SITE/oracle" > "$OUT" 2>&1 || fail "ADBC_ARCHIVE with ADBC_SHA256 failed"
 sed 's/^/  | /' "$OUT"
+expect "Checksum OK (--sha256)"
 manifest_ok "$D/oracle.toml" oracle 9.9.8
-[ "$(wc -l < "$ROOT/requests.log")" = "$before" ] || fail "--archive made requests"
-run nonzero -- "$SITE/oracle" --archive "$A/nothing.tar.gz"
+[ "$(wc -l < "$ROOT/requests.log")" = "$before" ] || fail "--archive with --sha256 made requests"
+run nonzero ADBC_VERSION=9.9.8 -- "$SITE/oracle" --archive "$A/$(asset_of oracle 9.9.8)" --sha256 "$(printf '1%.0s' $(seq 1 64))"
+expect "checksum mismatch for $(asset_of oracle 9.9.8): --sha256 says 1111111111111111111111111111111111111111111111111111111111111111"
+run nonzero -- "$SITE/oracle" --sha256 abc
+expect "ADBC_SHA256/--sha256 must be 64 hexadecimal digits (got 'abc')"
+run nonzero -- "$SITE/oracle" --archive "$A/nothing.tar.gz" --version 9.9.8 --sha256 "$good"
 expect "no such archive: $A/nothing.tar.gz"
 
-step "16. --base-url: a mirror of the release files"
+step "16. --base-url: a mirror's archive is checked against the GitHub release's checksums"
 # shellcheck disable=SC2086
-run 0 ADBC_VERSION=9.9.8 -- "$SITE/gizmosql" --base-url "$URL/storage/gizmodata/gizmosql-adbc/v9.9.8/"
+run 0 $GH ADBC_VERSION=9.9.8 -- "$SITE/gizmosql" --allow-http --base-url "$URL/storage/gizmodata/gizmosql-adbc/v9.9.8/"
 expect "Checksum OK (SHA256SUMS)"
 manifest_ok "$D/gizmosql.toml" gizmosql 9.9.8
-run nonzero ADBC_VERSION=9.9.8 -- "$SITE/gizmosql" --base-url "$URL/storage/gizmodata/gizmosql-adbc/v9.9.1"
+grep -q "^GET /gizmodata/gizmosql-adbc/releases/download/v9.9.8/SHA256SUMS$" "$ROOT/requests.log" || fail "the checksums weren't read from the release"
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.9.8 -- "$SITE/gizmosql" --allow-http --base-url "$URL/storage/gizmodata/gizmosql-adbc/v9.9.1"
 expect "could not download $URL/storage/gizmodata/gizmosql-adbc/v9.9.1/$(asset_of gizmosql 9.9.8) (HTTP 404)"
+# A plain http mirror needs --allow-http.
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.9.8 -- "$SITE/gizmosql" --base-url "$URL/storage/gizmodata/gizmosql-adbc/v9.9.8"
+expect "is plain http: pass --allow-http (ADBC_ALLOW_HTTP=1) to download from it"
+run nonzero -- "$SITE/gizmosql" --base-url "ftp://mirror.example/x"
+expect "--base-url must be an https:// URL (got 'ftp://mirror.example/x')"
+
+step "16a. A mirror's own SHA256SUMS is not trusted: its build of oracle 9.9.8 is refused"
+cp "$D/oracle.toml" "$ROOT/oracle.toml.before"
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.9.8 ADBC_ALLOW_HTTP=1 -- "$SITE/oracle" --base-url "$URL/storage/evil/mirror/v9.9.8"
+expect "checksum mismatch for $(asset_of oracle 9.9.8): SHA256SUMS says $(sum "$F/adbc-driver-oracle/v9.9.8/$(asset_of oracle 9.9.8)")"
+same "$D/oracle.toml" "$ROOT/oracle.toml.before"
+if grep -rq NOT-THE-REAL-DRIVER "$D"; then fail "the mirror's build was installed"; fi
+
+step "16b. A version must be one line of [0-9A-Za-z.-]: a line break is refused"
+bad_version="$(printf '9.9.8\n[Driver.shared]\n%s = "/tmp/evil"' "$PLATFORM")"
+set +e
+env "ADBC_VERSION=$bad_version" "$GH" "$SH" -s < "$SITE/oracle" > "$OUT" 2>&1; code=$?
+set -e
+sed 's/^/  | /' "$OUT"
+[ "$code" != 0 ] || fail "a version with a line break was accepted"
+expect "ADBC_VERSION/--version must be X.Y.Z or vX.Y.Z"
+same "$D/oracle.toml" "$ROOT/oracle.toml.before"
+# shellcheck disable=SC2086
+run nonzero $GH -- "$SITE/oracle" --version '9.9.8;x'
+expect "must be X.Y.Z or vX.Y.Z (got '9.9.8;x')"
+
+step "16c. Archives holding a symbolic link or a named pipe are refused"
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.8.1 -- "$SITE/oracle"
+expect "holds NOTICE, which is not a regular file or folder; not installing it"
+# shellcheck disable=SC2086
+run nonzero $GH ADBC_VERSION=9.8.2 -- "$SITE/oracle"
+expect "holds NOTICE, which is not a regular file or folder; not installing it"
+same "$D/oracle.toml" "$ROOT/oracle.toml.before"
+
+step "16d. One driver's script leaves a folder another driver's install made alone"
+# shellcheck disable=SC2086
+run nonzero $GH -- "$SITE/db2" --name oracle
+expect "$D/oracle holds another driver's files (installed for https://github.com/gizmodata/adbc-driver-oracle); uninstall that one, or pass --name <other name>"
+manifest_ok "$D/oracle.toml" oracle 9.9.8
+run 0 -- "$SITE/db2" --name oracle --uninstall
+expect "$D/oracle holds another driver's files (installed for https://github.com/gizmodata/adbc-driver-oracle); left as it is"
+manifest_ok "$D/oracle.toml" oracle 9.9.8
+# A folder marked by installer 1.0.0 (one line) is still recognised as ours.
+printf '%s\n' "Made by https://install.adbc.gizmodata.com for https://github.com/gizmodata/adbc-driver-oracle; removed by --uninstall." > "$D/oracle/.adbc-install"
+# shellcheck disable=SC2086
+run 0 $GH -- "$SITE/oracle"
+manifest_ok "$D/oracle.toml" oracle 9.9.9
+grep -qx "url = https://github.com/gizmodata/adbc-driver-oracle" "$D/oracle/.adbc-install" || fail "the marker doesn't name the driver"
+
+step "16e. A download cut short at any line runs nothing (curl | sh runs what has arrived)"
+cp "$D/oracle.toml" "$ROOT/oracle.toml.before"
+lines="$(wc -l < "$SITE/oracle" | tr -d ' ')"
+n=1
+while [ "$n" -lt "$lines" ]; do
+  head -n "$n" "$SITE/oracle" | env "$GH" "$SH" > "$OUT" 2>&1 || true
+  if grep -q -e Downloading -e Installed -e Removed "$OUT"; then fail "the first $n lines did something"; fi
+  same "$D/oracle.toml" "$ROOT/oracle.toml.before"
+  [ -f "$D/oracle/9.9.9/libadbc_driver_oracle.$EXT" ] || fail "the first $n lines removed the installed library"
+  n=$((n + 1))
+done
+echo "  every prefix of the $lines lines ran nothing"
+
+step "16f. The test-only github.com override must be https without the test flag"
+run nonzero ADBC_INSTALL_TEST_INSECURE= -- "$SITE/oracle"
+expect "ADBC_INSTALL_GITHUB is a test setting and must be https:// (got $DEAD)"
+run nonzero ADBC_INSTALL_GITHUB=ftp://example.invalid -- "$SITE/oracle"
+expect "ADBC_INSTALL_GITHUB must be an https:// URL (got ftp://example.invalid)"
 
 step "17. --system without root says to use sudo"
 if [ "$(id -u)" = 0 ]; then

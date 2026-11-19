@@ -122,6 +122,7 @@ jobs:
       - name: Refused with the musl explanation, before any download
         env:
           ADBC_INSTALL_GITHUB: http://127.0.0.1:9
+          ADBC_INSTALL_TEST_INSECURE: '1'
         run: |
           set +e
           out="$(sh .github/scripts/build-site.sh /tmp/site >/dev/null && sh /tmp/site/oracle 2>&1)"; code=$?
