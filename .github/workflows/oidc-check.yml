@@ -18,6 +18,10 @@ permissions:
 
 jobs:
   check:
+    # In the production environment, as the deploy job will be: the token's `sub` claim is then
+    # repo:gizmodata@181902052/adbc-install@1463434488:environment:production, which the deploy role
+    # must trust. The environment needs Philip's approval, so this waits for it.
+    environment: production
     # x64: the AWS CLI is preinstalled on this image.
     runs-on: ubuntu-24.04
     steps:
