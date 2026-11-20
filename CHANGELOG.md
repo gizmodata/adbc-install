@@ -7,6 +7,18 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-11-20
+
+### Fixed
+
+- **R on Windows finds the drivers by name** ([#10](https://github.com/gizmodata/adbc-install/issues/10)):
+  `install.ps1` wrote the library under `windows_<arch>` only, the key driver managers built with
+  MSVC (Python, Rust, ...) look up. R's `adbcdrivermanager` is built with MinGW (Rtools) and looks
+  up `windows_<arch>_mingw`, so `adbc_driver("hardcharger")` failed with "Driver path not found in
+  manifest ... for current architecture 'windows_amd64_mingw'". The manifest now names the same
+  library under both keys. Run the installer again to update a manifest written by 1.1.0 or
+  earlier. CI now loads every driver by name from R on Windows x64 and ARM64 too.
+
 ### Changed
 
 - The README's pinned-version examples use hardcharger 2.6.2, the release without a forced garbage

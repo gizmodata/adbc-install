@@ -54,9 +54,14 @@ def main() -> int:
     parser.add_argument("--driver", required=True, choices=sorted(DRIVERS))
     parser.add_argument("--name", help="the manifest name it was installed under (default: --driver)")
     parser.add_argument("--absent", action="store_true", help="the name must not be found")
+    parser.add_argument("--print-probe", action="store_true", help="print the URI and error text, a line each (for the R check)")
     args = parser.parse_args()
     name = args.name or args.driver
     uri, connect_text, option_probe = DRIVERS[args.driver]
+    if args.print_probe:
+        print(uri)
+        print(connect_text)
+        return 0
 
     if args.absent:
         try:

@@ -221,6 +221,17 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/venv"
           "$RUNNER_TEMP/venv/Scripts/python" -m pip install -q "$ADBC_DRIVER_MANAGER"
+      # R on Windows is built with MinGW (Rtools), so its driver manager reads the manifest's
+      # windows_<arch>_mingw entry, not the windows_<arch> one Python reads. CRAN's current
+      # adbcdrivermanager, so the weekly run also catches a change on R's side.
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
+        with:
+          r-version: release
+      - name: R's ADBC driver manager
+        shell: bash
+        run: |
+          Rscript -e 'install.packages("adbcdrivermanager", repos = "https://cloud.r-project.org")'
+          Rscript -e 'if (!requireNamespace("adbcdrivermanager", quietly = TRUE)) quit(status = 1); cat("adbcdrivermanager", as.character(packageVersion("adbcdrivermanager")), "\n")'
       - name: The scripts (this commit's, or the live site's on the weekly run)
         shell: bash
         run: |
@@ -230,11 +241,11 @@ jobs:
           fi
       - name: PowerShell 7
         shell: pwsh
-        run: ./.github/scripts/windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+        run: ./.github/scripts/windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe" -Rscript (Get-Command Rscript).Source
       - name: Windows PowerShell 5.1
         shell: powershell
         run: |
-          .\.github\scripts\windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe"
+          .\.github\scripts\windows-real-release.ps1 -Site site -Python "$env:RUNNER_TEMP\venv\Scripts\python.exe" -Rscript (Get-Command Rscript).Source
           exit $LASTEXITCODE
 
   # The one check main's branch protection requires: red if any job failed or was cancelled.
