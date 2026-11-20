@@ -28,7 +28,8 @@ Write-Host "shell: $shell $($PSVersionTable.PSVersion); platform: $platform; dri
 & $Python -c 'import adbc_driver_manager, sys; print(sys.version.split()[0], "adbc_driver_manager", adbc_driver_manager.__version__)'
 if ($LASTEXITCODE) { Write-Host "::error::$Python has no adbc_driver_manager"; exit 1 }
 if ($Rscript) {
-  & $Rscript --vanilla -e 'cat(R.version$platform, "adbcdrivermanager", as.character(packageVersion("adbcdrivermanager")), "\n")'
+  # Single quotes inside: Windows PowerShell 5.1 strips double quotes from a native command's arguments.
+  & $Rscript --vanilla -e 'cat(R.version$platform, ''adbcdrivermanager'', as.character(packageVersion(''adbcdrivermanager'')), ''\n'')'
   if ($LASTEXITCODE) { Write-Host "::error::$Rscript has no adbcdrivermanager"; exit 1 }
 }
 
