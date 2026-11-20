@@ -7,6 +7,15 @@ All notable changes to the GizmoData ADBC driver installer are documented here. 
 
 ## [Unreleased]
 
+### Changed
+
+- The real-release checks were run against the drivers that renamed their options to the
+  [ADBC driver style guide](https://adbc-drivers.org/building-drivers/style-guide.html) on
+  2026-11-20 (hardcharger-adbc 2.7.0, chargewire-adbc 2.5.0, adbc-driver-oracle 1.1.0,
+  adbc-driver-db2 0.3.0, adbc-driver-quack 1.1.0) and pass unchanged. `check_driver_by_name.py`
+  now says why its Hardcharger probe keeps the old `adbc.hardcharger.` prefix: only that spelling
+  is answered by Hardcharger's own library in every release, 2.6.1 (which deploy.yml pins) included.
+
 ## [1.1.1] - 2026-11-20
 
 ### Fixed
