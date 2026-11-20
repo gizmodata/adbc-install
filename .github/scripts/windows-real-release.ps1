@@ -6,8 +6,13 @@
 # It installs into this user's real %LOCALAPPDATA%\ADBC\Drivers (the driver manager reads the known
 # folder, not the environment variable): run it on a throwaway CI machine.
 #
-#   pwsh -File .github/scripts/windows-real-release.ps1 -Site site -Python <python with adbc-driver-manager>
-param([Parameter(Mandatory = $true)][string]$Site, [Parameter(Mandatory = $true)][string]$Python)
+# With -Rscript, each driver also loads by name from R (check_driver_by_name.R): R's driver manager
+# is built with MinGW and reads the manifest's windows_<arch>_mingw entry, Python's the
+# windows_<arch> one. One manifest without the _mingw entry must be refused by R, which shows the
+# check reads that entry.
+#
+#   pwsh -File .github/scripts/windows-real-release.ps1 -Site site -Python <python with adbc-driver-manager> [-Rscript <Rscript.exe with adbcdrivermanager>]
+param([Parameter(Mandatory = $true)][string]$Site, [Parameter(Mandatory = $true)][string]$Python, [string]$Rscript = '')
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch {}
@@ -22,6 +27,10 @@ $drv = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::Loca
 Write-Host "shell: $shell $($PSVersionTable.PSVersion); platform: $platform; drivers dir: $drv"
 & $Python -c 'import adbc_driver_manager, sys; print(sys.version.split()[0], "adbc_driver_manager", adbc_driver_manager.__version__)'
 if ($LASTEXITCODE) { Write-Host "::error::$Python has no adbc_driver_manager"; exit 1 }
+if ($Rscript) {
+  & $Rscript --vanilla -e 'cat(R.version$platform, "adbcdrivermanager", as.character(packageVersion("adbcdrivermanager")), "\n")'
+  if ($LASTEXITCODE) { Write-Host "::error::$Rscript has no adbcdrivermanager"; exit 1 }
+}
 
 $repos = [ordered]@{ hardcharger = 'hardcharger-adbc'; chargewire = 'chargewire-adbc'; gizmosql = 'gizmosql-adbc'; oracle = 'adbc-driver-oracle'; db2 = 'adbc-driver-db2'; quack = 'adbc-driver-quack' }
 # The Windows builds each driver's releases have (as of their latest releases, 2026-11-18).
@@ -59,6 +68,7 @@ function Invoke-Installer([string]$d, [string[]]$installerArgs = @(), [hashtable
   return ($code -eq 0)
 }
 function Test-ByName([string[]]$a) { & $Python -I "$here\check_driver_by_name.py" --driver $d @a 2>&1 | Write-Host; return ($LASTEXITCODE -eq 0) }
+function Test-ByNameFromR([string[]]$a) { & $Rscript --vanilla "$here\check_driver_by_name.R" @a 2>&1 | Write-Host; return ($LASTEXITCODE -eq 0) }
 
 foreach ($d in $repos.Keys) {
   Write-Host "`n### $d"
@@ -96,6 +106,17 @@ foreach ($d in $repos.Keys) {
   & $Python -I "$here\check_manifest.py" --manifest "$drv\$d.toml" --driver $d --version $ver --platform $platform 2>&1 | Write-Host
   if ($LASTEXITCODE) { Bad 'manifest' }
   if (-not (Test-ByName @())) { Bad "'$d' does not load by name" }
+  if ($Rscript) {
+    $probe = @(& $Python -I "$here\check_driver_by_name.py" --driver $d --print-probe)
+    if (-not (Test-ByNameFromR @('load', $d, $probe[0], $probe[1]))) { Bad "'$d' does not load by name from R" }
+    if ($d -eq 'hardcharger') {
+      # The same manifest without its _mingw entry, under another name: R must not find the library.
+      $lines = [IO.File]::ReadAllLines("$drv\$d.toml") | Where-Object { $_ -notmatch '^windows_[a-z0-9]+_mingw\s*=' }
+      [IO.File]::WriteAllText("$drv\$d-no-mingw.toml", (($lines -join "`n") + "`n"))
+      if (-not (Test-ByNameFromR @('no-arch', "$d-no-mingw", "${platform}_mingw"))) { Bad "R loaded a manifest without its ${platform}_mingw entry" }
+      Remove-Item -LiteralPath "$drv\$d-no-mingw.toml"
+    }
+  }
 
   if ($d -eq 'oracle') {
     Write-Host "-- oracle: irm | iex with `$env:ADBC_VERSION = '$ver'"

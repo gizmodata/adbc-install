@@ -46,6 +46,11 @@ def main() -> int:
     lib_dir = args.lib_dir or os.path.join(os.path.dirname(os.path.abspath(args.manifest)), name, args.version)
     want_path = os.path.join(lib_dir, lib + EXT[args.platform.split("_")[0]])
 
+    # Windows manifests name the library twice: windows_<arch> for driver managers built with MSVC,
+    # windows_<arch>_mingw for those built with MinGW (R on Windows).
+    want_shared = {args.platform: want_path}
+    if args.platform.startswith("windows_"):
+        want_shared[args.platform + "_mingw"] = want_path
     checks = {
         "manifest_version": (doc.get("manifest_version"), 1),
         "url": (doc.get("url"), url),
@@ -53,7 +58,7 @@ def main() -> int:
         "publisher": (doc.get("publisher"), "GizmoData"),
         "ADBC.version": (doc.get("ADBC", {}).get("version"), "1.1.0"),
         "Driver.entrypoint": (doc.get("Driver", {}).get("entrypoint"), entrypoint),
-        "Driver.shared": (doc.get("Driver", {}).get("shared"), {args.platform: want_path}),
+        "Driver.shared": (doc.get("Driver", {}).get("shared"), want_shared),
     }
     for key, (got, want) in checks.items():
         if got != want:

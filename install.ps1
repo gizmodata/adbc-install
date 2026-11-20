@@ -515,8 +515,12 @@ function Invoke-Main {
       '[Driver]',
       "entrypoint = '$($info.Entry)'",
       '',
+      '# The same library for both Windows toolchains: driver managers built with MSVC (Python, Rust,',
+      '# ...) look up windows_<arch>, those built with MinGW (R on Windows, built with Rtools) look up',
+      '# windows_<arch>_mingw. The library exports plain C functions, so either kind loads it.',
       '[Driver.shared]',
-      "$platform = `"$escaped`""
+      "$platform = `"$escaped`"",
+      "${platform}_mingw = `"$escaped`""
     ) -join "`n"
     # UTF-8 without a byte order mark (5.1's -Encoding UTF8 writes one), staged next to the manifest.
     $staged = Join-Path $dirPath ".$mname.toml.tmp.$PID"
