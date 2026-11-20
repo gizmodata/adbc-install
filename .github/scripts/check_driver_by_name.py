@@ -32,7 +32,11 @@ DRIVERS = {
         ("adbc.hardcharger.no_such_option", "[chargewire] Unknown database option 'adbc.hardcharger.no_such_option'"),
     ),
     # Hardcharger's driver is built on Chargewire's, so its connection error says [chargewire]; the
-    # option error tells the two apart.
+    # option error tells the two apart. The probe keeps the pre-2.7.0 `adbc.hardcharger.` prefix on
+    # purpose: it is the only spelling every Hardcharger release answers as its own (2.6.x and
+    # 2.7.0+ alike: "[hardcharger] unknown option ..."). The style-guide spelling
+    # `hardcharger.no_such_option` gets Chargewire's "Unknown database option" from 2.6.x, the
+    # version deploy.yml pins (ADBC_VERSION=2.6.1), so it could not tell the libraries apart there.
     "hardcharger": (
         "hardcharger://127.0.0.1:1?tls=false",
         "connecting to http://127.0.0.1:1/chargewire",
